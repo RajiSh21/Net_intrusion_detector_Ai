@@ -1,0 +1,25 @@
+# Large data files
+Data/raw/*.csv
+Data/raw/*.parquet
+*.npy
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Model binaries (too large, generated artifacts)
+*.pkl
+*.json
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
