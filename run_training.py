@@ -196,8 +196,13 @@ else:
             optimizer_G = optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
             optimizer_D = optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 
+            # Dynamically adjust batch size to avoid empty batches or batch norm errors
+            effective_batch_size = min(len(X_minority), batch_size)
+            effective_batch_size = max(2, effective_batch_size)
+            drop_last = len(X_minority) >= effective_batch_size
+
             dataset = TensorDataset(torch.FloatTensor(X_minority))
-            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+            dataloader = DataLoader(dataset, batch_size=effective_batch_size, shuffle=True, drop_last=drop_last)
 
             for epoch in range(epochs):
                 for i, (real_samples,) in enumerate(dataloader):
@@ -256,6 +261,16 @@ else:
             samples_to_generate = max_samples - len(X_minority)
 
             if samples_to_generate <= 0:
+                continue
+
+            if len(X_minority) < 10:
+                print(f"    [!] Warning: Extremely few samples ({len(X_minority)}) for class '{class_name}'. Using random oversampling instead of GAN.")
+                idx = np.random.choice(len(X_minority), samples_to_generate, replace=True)
+                synthetic_features = X_minority[idx]
+                synthetic_labels = np.full(samples_to_generate, class_idx)
+                X_augmented_list.append(synthetic_features)
+                y_augmented_list.append(synthetic_labels)
+                print(f"[+] Oversampling complete for class '{class_name}'.")
                 continue
 
             print(f"[*] Training GAN for minority class: '{class_name}'...")
