@@ -184,10 +184,13 @@ else:
             def forward(self, x):
                 return self.model(x)
 
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"[*] GAN Augmentation running on device: {device}")
+
         def train_tabular_gan(X_minority, epochs=150, batch_size=64, latent_dim=32):
             input_dim = X_minority.shape[1]
-            generator = TabularGenerator(latent_dim, input_dim)
-            discriminator = TabularDiscriminator(input_dim)
+            generator = TabularGenerator(latent_dim, input_dim).to(device)
+            discriminator = TabularDiscriminator(input_dim).to(device)
 
             criterion = nn.BCELoss()
             optimizer_G = optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
@@ -198,16 +201,17 @@ else:
 
             for epoch in range(epochs):
                 for i, (real_samples,) in enumerate(dataloader):
+                    real_samples = real_samples.to(device)
                     current_batch_size = real_samples.size(0)
-                    real_labels = torch.ones(current_batch_size, 1)
-                    fake_labels = torch.zeros(current_batch_size, 1)
+                    real_labels = torch.ones(current_batch_size, 1, device=device)
+                    fake_labels = torch.zeros(current_batch_size, 1, device=device)
 
                     # Train Discriminator
                     optimizer_D.zero_grad()
                     outputs_real = discriminator(real_samples)
                     loss_real = criterion(outputs_real, real_labels)
 
-                    z = torch.randn(current_batch_size, latent_dim)
+                    z = torch.randn(current_batch_size, latent_dim, device=device)
                     fake_samples = generator(z)
                     outputs_fake = discriminator(fake_samples.detach())
                     loss_fake = criterion(outputs_fake, fake_labels)
@@ -259,9 +263,9 @@ else:
 
             gen_model = train_tabular_gan(X_minority, epochs=100, batch_size=32)
 
-            z_noise = torch.randn(samples_to_generate, 32)
+            z_noise = torch.randn(samples_to_generate, 32, device=device)
             with torch.no_grad():
-                synthetic_features = gen_model(z_noise).numpy()
+                synthetic_features = gen_model(z_noise).cpu().numpy()
 
             synthetic_labels = np.full(samples_to_generate, class_idx)
             X_augmented_list.append(synthetic_features)
@@ -323,9 +327,18 @@ print(f"\n    Training Class Distribution:")
 for cls, cnt in zip(classes, counts):
     name = target_encoder.inverse_transform([cls])[0]
     print(f"      {name}: {cnt} samples")
-
 # Configure XGBoost
 print("\n[*] Configuring XGBoost Hyperparameters...")
+xgb_device = 'cpu'
+try:
+    # Test if GPU is supported by XGBoost on this machine
+    test_clf = xgb.XGBClassifier(device='cuda')
+    test_clf.fit(np.zeros((1, 1)), np.zeros((1,)))
+    xgb_device = 'cuda'
+    print("[+] XGBoost GPU (CUDA) acceleration enabled!")
+except Exception:
+    print("[-] XGBoost GPU acceleration not available, falling back to CPU.")
+
 model = xgb.XGBClassifier(
     n_estimators=300,
     max_depth=7,
@@ -336,7 +349,8 @@ model = xgb.XGBClassifier(
     num_class=num_classes,
     eval_metric='mlogloss',
     random_state=42,
-    tree_method='hist'
+    tree_method='hist',
+    device=xgb_device
 )
 
 # Train
