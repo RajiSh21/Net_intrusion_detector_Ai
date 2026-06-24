@@ -15,6 +15,9 @@ __pycache__/
 # Jupyter checkpoints
 .ipynb_checkpoints/
 
+# Runtime logs
+logs/
+
 # Virtual environment
 venv/
 env/
