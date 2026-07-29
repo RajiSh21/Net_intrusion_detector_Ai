@@ -5,6 +5,7 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
+import re
 
 app = Flask(__name__)
 CORS(app)
@@ -73,6 +74,12 @@ def register():
     
     if not username or not password or not first_name or not email:
         return jsonify({"error": "Required fields are missing"}), 400
+
+    if bool(re.search(r'\d', username)):
+        return jsonify({"error": "Username cannot contain numbers"}), 400
+
+    if username.lower() == password.lower():
+        return jsonify({"error": "Username and password cannot be identical"}), 400
 
     db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'alerts.db')
     
@@ -147,7 +154,10 @@ def login():
         user = cursor.fetchone()
         conn.close()
         
-        if user and check_password_hash(user[2], password):
+        if not user:
+            return jsonify({"error": "User is not registered"}), 404
+
+        if check_password_hash(user[2], password):
             return jsonify({
                 "success": True, 
                 "user": {
@@ -161,7 +171,42 @@ def login():
                 }
             })
         else:
-            return jsonify({"error": "Invalid credentials"}), 401
+            return jsonify({"error": "Password doesn't match"}), 401
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/reset-password', methods=['POST'])
+def reset_password():
+    data = request.json
+    email = data.get('email')
+    new_password = data.get('newPassword')
+
+    if not email or not new_password:
+        return jsonify({"error": "Email and new password are required"}), 400
+
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'alerts.db')
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT username FROM ADMINISTRATOR WHERE email = ?", (email,))
+        user = cursor.fetchone()
+        
+        if not user:
+            conn.close()
+            return jsonify({"error": "No account found with that email address"}), 404
+            
+        username = user[0]
+        if username.lower() == new_password.lower():
+            conn.close()
+            return jsonify({"error": "Password cannot be identical to your username"}), 400
+            
+        hashed_pw = generate_password_hash(new_password)
+        cursor.execute("UPDATE ADMINISTRATOR SET password_hash = ? WHERE email = ?", (hashed_pw, email))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"success": True, "message": "Password reset successful"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

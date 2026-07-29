@@ -504,6 +504,15 @@ class LiveSniffer:
             'recent_alerts': deque(maxlen=20),
         }
 
+        # Socket.IO Client for Real-time Dashboard
+        self.sio = socketio.Client()
+        try:
+            self.sio.connect('http://localhost:5000')
+            logger.info("Connected to WebSocket API Server for live updates.")
+        except Exception as e:
+            logger.warning(f"Could not connect to WebSocket API Server: {e}")
+            self.sio = None
+
     def _scapy_callback(self, pkt):
         """Callback for each captured packet (runs in Scapy thread).
         Silently aggregates packets into flows. No raw packet output."""
@@ -595,6 +604,27 @@ class LiveSniffer:
                 is_intrusion = self.classifier.is_intrusion(label)
                 self.flow_count += 1
                 self.stats['total_flows'] += 1
+
+                # Emit over websocket for the React dashboard
+                if self.sio and self.sio.connected:
+                    try:
+                        self.sio.emit('new_packet', {
+                            "id": str(time.time()),
+                            "timestamp": datetime.now().isoformat(),
+                            "src": src_ip,
+                            "dst": dst_ip,
+                            "sport": src_port,
+                            "dport": dst_port,
+                            "proto": "TCP" if proto==6 else ("UDP" if proto==17 else "ICMP"),
+                            "verdict": label,
+                            "confidence": confidence,
+                            "length": len(packets),
+                            "latencyMs": elapsed,
+                            "sev": "High" if is_intrusion else "Low",
+                            "type": label
+                        })
+                    except Exception:
+                        pass
 
                 # Always log the alert so it emits to the WebSocket UI
                 self.alert_logger.log_alert(
@@ -884,7 +914,7 @@ Examples:
     logger.info("Initializing NIDS live capture system...")
     classifier = NIDSClassifier(model_path, scaler_path, labels_path, proto_encoder_path)
     alert_logger = AlertLogger(
-        db_path="mongodb://localhost:27017/",
+        db_path=None,
         csv_path=args.output,
         save_to_db=not args.no_save,
     )

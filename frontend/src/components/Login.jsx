@@ -3,6 +3,7 @@ import { Shield, Eye, EyeOff } from 'lucide-react';
 
 export default function Login({ onLogin }) {
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -16,9 +17,42 @@ export default function Login({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (password.length > 0 && password.length < 4) {
+      setError('Password is too short. It must be at least 4 characters.');
+      return;
+    }
+    
+    if (isRegistering) {
+      if (/\d/.test(username)) {
+        setError('Username cannot contain numbers.');
+        return;
+      }
+      if (username.toLowerCase() === password.toLowerCase()) {
+        setError('Password cannot be identical to your username.');
+        return;
+      }
+    }
+
+    if (isResetting) {
+      if (!email || !password) {
+        setError('Email and new password are required.');
+        return;
+      }
+    }
+
     setLoading(true);
 
-    const endpoint = isRegistering ? 'http://localhost:5000/api/register' : 'http://localhost:5000/api/login';
+    let endpoint = 'http://localhost:5000/api/login';
+    let payload = { username, password };
+
+    if (isRegistering) {
+      endpoint = 'http://localhost:5000/api/register';
+      payload = { username, password, firstName, lastName, email, contact };
+    } else if (isResetting) {
+      endpoint = 'http://localhost:5000/api/reset-password';
+      payload = { email, newPassword: password };
+    }
     
     try {
       const response = await fetch(endpoint, {
@@ -26,14 +60,7 @@ export default function Login({ onLogin }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          username, 
-          password,
-          firstName,
-          lastName,
-          email,
-          contact
-        }),
+        body: JSON.stringify(payload),
       });
       
       const data = await response.json();
@@ -46,6 +73,11 @@ export default function Login({ onLogin }) {
         setIsRegistering(false);
         setError('');
         alert('Registration successful! Please login with your new credentials.');
+      } else if (isResetting) {
+        setIsResetting(false);
+        setPassword('');
+        setError('');
+        alert('Password reset successful! Please login.');
       } else {
         onLogin(data.user);
       }
@@ -332,13 +364,17 @@ export default function Login({ onLogin }) {
 
       <div className="right-pane">
         <div className="auth-card">
-          <div className="card-title">{isRegistering ? "Create Account" : "Welcome Back"}</div>
-          <div className="card-sub">{isRegistering ? "Join NIDS to secure your network" : "Sign in to continue to NIDS"}</div>
+          <div className="card-title">
+            {isResetting ? "Reset Password" : (isRegistering ? "Create Account" : "Welcome Back")}
+          </div>
+          <div className="card-sub">
+            {isResetting ? "Enter your email to reset your password" : (isRegistering ? "Join NIDS to secure your network" : "Sign in to continue to NIDS")}
+          </div>
 
           <form onSubmit={handleSubmit}>
             {error && <div className="error-msg">{error}</div>}
             
-            {isRegistering && (
+            {isRegistering && !isResetting && (
               <>
                 <div className="input-group">
                   <label className="input-label">First Name</label>
@@ -351,12 +387,14 @@ export default function Login({ onLogin }) {
               </>
             )}
 
-            <div className="input-group">
-              <label className="input-label">Administrator ID (Username)</label>
-              <input type="text" className="input-field" placeholder="Enter your ID" value={username} onChange={(e) => setUsername(e.target.value)} required />
-            </div>
+            {!isResetting && (
+              <div className="input-group">
+                <label className="input-label">Administrator ID (Username)</label>
+                <input type="text" className="input-field" placeholder="Enter your ID" value={username} onChange={(e) => setUsername(e.target.value)} required pattern="[A-Za-z_]+" title="Only letters and underscores are allowed (no numbers)" />
+              </div>
+            )}
 
-            {isRegistering && (
+            {(isRegistering || isResetting) && (
               <div className="input-group">
                 <label className="input-label">Email</label>
                 <input type="email" className="input-field" placeholder="Enter your email" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -364,36 +402,44 @@ export default function Login({ onLogin }) {
             )}
             
             <div className="input-group">
-              <label className="input-label">Password</label>
+              <label className="input-label">{isResetting ? "New Password" : "Password"}</label>
               <div className="input-wrapper">
-                <input type={showPassword ? "text" : "password"} className="input-field" placeholder={isRegistering ? "Create a password" : "Enter your password"} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={4} />
-                <div className="input-icon-right" onClick={() => setShowPassword(!showPassword)}>
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </div>
+                <input type={showPassword ? "text" : "password"} className="input-field" placeholder={isResetting ? "Create a new password" : (isRegistering ? "Create a password" : "Enter your password")} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={4} />
+                {password.length > 0 && (
+                  <div className="input-icon-right" onClick={() => setShowPassword(!showPassword)}>
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </div>
+                )}
               </div>
             </div>
             
-            {!isRegistering && (
+            {!isRegistering && !isResetting && (
               <div className="actions-row">
                 <label className="checkbox-label">
                   <input type="checkbox" className="checkbox" /> Remember me
                 </label>
-                <span className="forgot-link" style={{cursor:'pointer'}}>Forgot Password?</span>
+                <span className="forgot-link" style={{cursor:'pointer'}} onClick={() => { setIsResetting(true); setError(''); }}>Forgot Password?</span>
               </div>
             )}
             
             <button type="submit" className="submit-btn" disabled={loading}>
-              {loading ? 'Processing...' : (isRegistering ? 'Register' : 'Login')}
+              {loading ? 'Processing...' : (isResetting ? 'Reset Password' : (isRegistering ? 'Register' : 'Login'))}
             </button>
 
             <div className="toggle-link">
-              {isRegistering ? "Already have an account?" : "Don't have an account?"}
-              <span onClick={() => {
-                setIsRegistering(!isRegistering);
-                setError('');
-              }}>
-                {isRegistering ? "Login" : "Register"}
-              </span>
+              {isResetting ? (
+                <>
+                  Remember your password?
+                  <span onClick={() => { setIsResetting(false); setError(''); }}>Login</span>
+                </>
+              ) : (
+                <>
+                  {isRegistering ? "Already have an account?" : "Don't have an account?"}
+                  <span onClick={() => { setIsRegistering(!isRegistering); setError(''); }}>
+                    {isRegistering ? "Login" : "Register"}
+                  </span>
+                </>
+              )}
             </div>
           </form>
         </div>

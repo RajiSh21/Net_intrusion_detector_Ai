@@ -2,54 +2,64 @@ import React, { useState, useEffect } from "react";
 import { Shield, AlertTriangle, Ban, Activity } from "lucide-react";
 import { io } from "socket.io-client";
 
-// Simulated packet generator (display-only)
-const generatePacket = () => ({
-  id: Math.random().toString(36).substr(2, 9),
-  time: new Date(),
-  src: `192.168.1.${Math.floor(Math.random() * 255)}`,
-  dst: `10.0.0.${Math.floor(Math.random() * 255)}`,
-  proto: ["TCP", "UDP", "ICMP"][Math.floor(Math.random() * 3)],
-  size: Math.floor(Math.random() * 1500) + 64,
-  flags: ["SYN", "ACK", "PSH", "FIN"][Math.floor(Math.random() * 4)],
-  sev: Math.random() > 0.8 ? "High" : Math.random() > 0.5 ? "Medium" : "Low",
-  type: Math.random() > 0.8 ? "DoS Attack" : Math.random() > 0.6 ? "Port Scan" : "Normal"
-});
+// Real-time packet table logic driven by websockets
 
 export default function Overview() {
   const [packets, setPackets] = useState([]);
-  const [totalAnalyzed, setTotalAnalyzed] = useState(12543);
-  const [threatsFound, setThreatsFound] = useState(128);
-  const [blocked, setBlocked] = useState(56);
-  const [monitoredHosts, setMonitoredHosts] = useState(24);
-  const [recentAlerts, setRecentAlerts] = useState([
-    { sev: 'High', type: 'DoS Attack Detected', src: '192.168.1.45', time: '2 min ago' },
-    { sev: 'Critical', type: 'SQL Injection Attempt', src: '192.168.1.23', time: '5 min ago' },
-    { sev: 'Medium', type: 'Port Scan Detected', src: '10.0.0.5', time: '8 min ago' },
-    { sev: 'High', type: 'Brute Force Attempt', src: '192.168.1.78', time: '12 min ago' }
-  ]);
+  const [totalAnalyzed, setTotalAnalyzed] = useState(0);
+  const [threatsFound, setThreatsFound] = useState(0);
+  const [blocked, setBlocked] = useState(0);
+  const [monitoredHosts, setMonitoredHosts] = useState(0);
+  const [recentAlerts, setRecentAlerts] = useState([]);
+  const hostsSet = new Set();
 
   useEffect(() => {
+    // Fetch initial total alerts from SQLite DB
+    fetch('http://localhost:5000/api/stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data.threatsFound) setThreatsFound(data.threatsFound);
+      })
+      .catch(err => console.error(err));
+
     const socket = io("http://localhost:5000");
-    socket.on("connect", () => console.log("Overview: Connected to API Server"));
+    socket.on("connect", () => console.log("Overview: Connected to API Server for live stream"));
     
-    socket.on("analysis_result", (data) => {
+    socket.on("packet_update", (data) => {
       setTotalAnalyzed(prev => prev + 1);
-      if (data.prediction !== "Benign") {
+      
+      hostsSet.add(data.src);
+      hostsSet.add(data.dst);
+      setMonitoredHosts(hostsSet.size);
+
+      const newPacket = {
+        id: data.id || Math.random().toString(36).substr(2, 9),
+        time: new Date(data.timestamp),
+        src: data.src,
+        dst: data.dst,
+        proto: data.proto,
+        size: data.length,
+        flags: "...", // Dynamic flags not strictly needed
+        sev: data.sev,
+        type: data.type || data.verdict,
+        verdict: data.verdict || data.type
+      };
+
+      setPackets(prev => [newPacket, ...prev].slice(0, 50));
+
+      if (data.verdict !== "Normal") {
         setThreatsFound(prev => prev + 1);
-        if (Math.random() > 0.5) setBlocked(prev => prev + 1);
+        if (data.sev === "High" || data.sev === "Critical") setBlocked(prev => prev + 1);
+        
+        setRecentAlerts(prev => {
+          const alert = { sev: data.sev, type: data.type, src: data.src, time: 'Just now' };
+          return [alert, ...prev].slice(0, 4);
+        });
       }
     });
 
-    const interval = setInterval(() => {
-      setPackets(prev => {
-        const newPackets = [generatePacket(), ...prev].slice(0, 50);
-        return newPackets;
-      });
-    }, 2000);
-
     return () => {
       socket.disconnect();
-      clearInterval(interval);
     };
   }, []);
 
@@ -177,8 +187,8 @@ export default function Overview() {
             {recentAlerts.map((alert, i) => (
               <div className="alert-item" key={i}>
                 <div className="alert-left">
-                  <div className={`alert-badge ${alert.sev.toLowerCase()}`}>{alert.sev}</div>
-                  <div className="alert-text">{alert.type} from <span style={{color: '#64748b'}}>{alert.src}</span></div>
+                  <div className={`alert-badge ${(alert.sev || 'High').toLowerCase()}`}>{alert.sev || 'High'}</div>
+                  <div className="alert-text">{alert.type || alert.verdict || 'Alert'} from <span style={{color: '#64748b'}}>{alert.src}</span></div>
                 </div>
                 <div className="alert-sub">{alert.time}</div>
               </div>
@@ -206,6 +216,53 @@ export default function Overview() {
               <div className="view-all" style={{float:'left', marginTop:'4px'}}>View Details</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Live Packets Table */}
+      <div className="card" style={{ marginTop: '24px' }}>
+        <div className="card-title">Live Network Traffic</div>
+        <div style={{ overflowX: 'auto', marginTop: '16px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                <th style={{ padding: '12px 8px' }}>Time</th>
+                <th style={{ padding: '12px 8px' }}>Source IP</th>
+                <th style={{ padding: '12px 8px' }}>Dest IP</th>
+                <th style={{ padding: '12px 8px' }}>Protocol</th>
+                <th style={{ padding: '12px 8px' }}>Length</th>
+                <th style={{ padding: '12px 8px' }}>Verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              {packets.slice(0, 15).map((pkt, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '12px 8px', color: '#64748b' }}>{pkt.time instanceof Date && !isNaN(pkt.time.getTime()) ? pkt.time.toLocaleTimeString() : 'Just now'}</td>
+                  <td style={{ padding: '12px 8px', fontWeight: 500 }}>{pkt.src}</td>
+                  <td style={{ padding: '12px 8px', fontWeight: 500 }}>{pkt.dst}</td>
+                  <td style={{ padding: '12px 8px' }}>{pkt.proto}</td>
+                  <td style={{ padding: '12px 8px' }}>{pkt.size}</td>
+                  <td style={{ padding: '12px 8px' }}>
+                    <span style={{ 
+                      padding: '4px 8px', 
+                      borderRadius: '4px', 
+                      backgroundColor: (pkt.verdict === 'Normal' || pkt.type === 'Normal') ? '#dcfce7' : '#fee2e2',
+                      color: (pkt.verdict === 'Normal' || pkt.type === 'Normal') ? '#16a34a' : '#ef4444',
+                      fontWeight: 500,
+                      fontSize: '11px'
+                    }}>
+                      {pkt.verdict || pkt.type}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {packets.length === 0 && (
+                <tr>
+                  <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>Waiting for live network traffic...</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

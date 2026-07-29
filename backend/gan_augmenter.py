@@ -84,9 +84,14 @@ try:
                 loss_G = criterion(outputs_g_fake, real_labels)
                 loss_G.backward()
                 optimizer_G.step()
+                
+                with torch.no_grad():
+                    real_acc = (outputs_real > 0.5).float().mean()
+                    fake_acc = (outputs_fake < 0.5).float().mean()
+                    d_accuracy = (real_acc + fake_acc) / 2.0 * 100
 
             if (epoch + 1) % 50 == 0 or epoch == 0:
-                print(f"    [Epoch {epoch+1}/{epochs}] Loss D: {loss_D.item():.4f} | Loss G: {loss_G.item():.4f}")
+                print(f"    [Epoch {epoch+1}/{epochs}] Loss D: {loss_D.item():.4f} | Loss G: {loss_G.item():.4f} | D-Accuracy: {d_accuracy.item():.1f}%")
 
         return generator
     
@@ -150,7 +155,7 @@ def run_phase_2(output_dir):
         print(f"[*] Training GAN for minority class: '{class_name}'...")
         print(f"    Target: Fabricating {samples_to_generate} synthetic network signatures...")
 
-        gen_model = train_tabular_gan(X_minority, device, epochs=100, batch_size=32)
+        gen_model = train_tabular_gan(X_minority, device, epochs=2, batch_size=32)
 
         z_noise = torch.randn(samples_to_generate, 32, device=device)
         with torch.no_grad():
