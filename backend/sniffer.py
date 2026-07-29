@@ -24,7 +24,7 @@ import argparse
 import logging
 import threading
 import csv
-import pymongo
+import sqlite3
 import socketio
 from datetime import datetime, timezone
 from pathlib import Path
@@ -255,11 +255,15 @@ class FeaturePreprocessor:
 #  ALERT LOGGING & DATABASE
 # ============================================================
 class AlertLogger:
-    """Logs intrusion alerts to MongoDB and optional CSV, and emits to Socket.IO."""
+    """Logs intrusion alerts to SQLite and optional CSV, and emits to Socket.IO."""
 
-    def __init__(self, db_path: str = "mongodb://localhost:27017/", csv_path: Optional[str] = None,
+    def __init__(self, db_path: Optional[str] = None, csv_path: Optional[str] = None,
                  save_to_db: bool = True):
-        self.db_path = db_path
+        if db_path is None:
+            self.db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'alerts.db')
+        else:
+            self.db_path = db_path
+        
         self.csv_path = csv_path
         self.save_to_db = save_to_db
         
@@ -277,13 +281,59 @@ class AlertLogger:
         if not self.save_to_db:
             return
         try:
-            self.mongo_client = pymongo.MongoClient(self.db_path, serverSelectionTimeoutMS=2000)
-            self.mongo_client.server_info() # test connection
-            self.db = self.mongo_client["nids"]
-            self.alerts_collection = self.db["alerts"]
-            logger.info(f"Connected to MongoDB at {self.db_path}")
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS ADMINISTRATOR (
+                    admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT,
+                    password_hash TEXT
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS DATASET (
+                    dataset_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    admin_id INTEGER,
+                    dataset_name TEXT,
+                    file_path TEXT,
+                    upload_date TEXT,
+                    FOREIGN KEY(admin_id) REFERENCES ADMINISTRATOR(admin_id)
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS USER (
+                    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    full_name TEXT,
+                    security_role TEXT
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS TRAFFIC_LOG (
+                    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_ip TEXT,
+                    destination_ip TEXT,
+                    port INTEGER,
+                    protocol TEXT,
+                    classification TEXT,
+                    timestamp TEXT
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS ALERT (
+                    alert_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    log_id INTEGER,
+                    severity_level TEXT,
+                    resolution_status TEXT,
+                    generated_at TEXT,
+                    FOREIGN KEY(log_id) REFERENCES TRAFFIC_LOG(log_id)
+                )
+            ''')
+            self.conn.commit()
+            logger.info(f"Connected to SQLite at {self.db_path}")
         except Exception as e:
-            logger.error(f"Failed to connect to MongoDB: {e}")
+            logger.error(f"Failed to connect to SQLite: {e}")
             self.save_to_db = False
 
     def _init_csv(self):
@@ -328,27 +378,34 @@ class AlertLogger:
         if self.sio.connected:
             self.sio.emit('new_packet', packet_data)
 
-        # Only save intrusions to DB
-        if prediction != BENIGN_LABEL:
-            doc = {
-                "timestamp": timestamp,
-                "src_ip": src_ip,
-                "dst_ip": dst_ip,
-                "src_port": src_port,
-                "dst_port": dst_port,
-                "protocol": protocol,
-                "prediction": prediction,
-                "confidence": confidence,
-                "num_packets": num_packets,
-                "flow_duration_us": flow_duration,
-                "total_bytes": total_bytes,
-                "features": features.to_list()
-            }
-            if self.save_to_db:
-                try:
-                    self.alerts_collection.insert_one(doc)
-                except Exception as e:
-                    logger.error(f"Failed to log alert to MongoDB: {e}")
+        # Always save traffic to TRAFFIC_LOG
+        if self.save_to_db:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute('''
+                    INSERT INTO TRAFFIC_LOG (
+                        source_ip, destination_ip, port, protocol, classification, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                ''', (
+                    src_ip, dst_ip, dst_port, str(protocol), prediction, timestamp
+                ))
+                
+                log_id = cursor.lastrowid
+                
+                # Only save intrusions to ALERT table
+                if prediction != BENIGN_LABEL:
+                    severity = "High" if confidence > 0.9 else "Medium"
+                    cursor.execute('''
+                        INSERT INTO ALERT (
+                            log_id, severity_level, resolution_status, generated_at
+                        ) VALUES (?, ?, ?, ?)
+                    ''', (
+                        log_id, severity, "Pending", timestamp
+                    ))
+                
+                self.conn.commit()
+            except Exception as e:
+                logger.error(f"Failed to log to SQLite database: {e}")
 
             # CSV
             if self.csv_path:
