@@ -1,6 +1,6 @@
 # Network Intrusion Detection System (NIDS) — AI-Powered
 
-A machine learning pipeline that detects network intrusions using XGBoost trained on the IDS2025 network flow dataset. Includes feature engineering, GAN-based data augmentation for class balancing, and a trained classifier achieving 99% accuracy across 7 attack categories.
+A comprehensive machine learning pipeline and real-time dashboard that detects network intrusions. It utilizes a trained XGBoost model operating on the IDS2025 network flow dataset. It includes data preparation, GAN-based data augmentation for class balancing, an API for WebSockets, and a beautiful React frontend to visualize live packet captures and AI classifications.
 
 ---
 
@@ -9,12 +9,15 @@ A machine learning pipeline that detects network intrusions using XGBoost traine
 ```
 Nid/
 ├── backend/                          # Python source code & ML pipeline
-│   ├── api_server.py                 # Socket.IO API server bridging sniffer & frontend
+│   ├── api_server.py                 # Flask/Socket.IO API server bridging sniffer & frontend
 │   ├── run_detector.py               # Run live intrusion detection (uses trained model)
 │   ├── sniffer.py                    # Real-time packet capture engine & classifier
 │   ├── train_model.py                # Train the model ONCE (feature → GAN → XGBoost)
+│   ├── gan_augmenter.py              # PyTorch GAN Implementation
+│   ├── train_xgboost.py              # XGBoost training pipeline
+│   ├── data_prep.py                  # Feature engineering module
 │   └── utils.py                      # Flow feature extraction utilities
-├── frontend/                         # React-based live dashboard (Vite + Tailwind)
+├── frontend/                         # React-based live dashboard (Vite)
 │   └── src/                          # Real-time dashboard UI source code
 ├── models/                           # Trained model artifacts
 │   ├── attack_classes.pkl            # Label encoder (class names → IDs)
@@ -58,18 +61,36 @@ Nid/
 
 ---
 
-## Quick Start
+## Quick Start: Running the Live System
 
-### 1. Run the Live Dashboard (Recommended)
+We have created a single batch script that will launch the entire ecosystem (Frontend, Backend API, and Packet Sniffer) simultaneously. 
 
-Simply double-click the `start_all.bat` script in the root directory. This will automatically:
-1. Start the React frontend on `http://localhost:5173`
-2. Start the Socket.IO API server on `http://localhost:5000`
-3. Start the Live Packet Sniffer to capture raw network traffic and classify it in real-time.
+### Step 1: Run the Startup Script
+The Packet Sniffer requires raw socket access to capture live network traffic, which means it **must** be run with Administrator privileges on Windows.
+1. Open a terminal (Command Prompt or PowerShell) **as Administrator**.
+2. Navigate to the root `Nid` folder.
+3. Run the startup script:
+   ```cmd
+   .\start_all.bat
+   ```
 
-> **Note:** The Packet Sniffer requires administrative privileges to bind to raw network sockets. Run `start_all.bat` as Administrator.
+### Step 2: Verify the Services
+The script will open three separate terminal windows:
+- **Window 1 (Frontend)**: Starts a Vite server on `http://localhost:5173`.
+- **Window 2 (API Server)**: Starts a Flask-SocketIO server on `http://localhost:5000`.
+- **Window 3 (Packet Sniffer)**: Loads the XGBoost model and begins capturing packets.
 
-### 2. Train the model (once)
+### Step 3: View the Dashboard
+1. Open Google Chrome, Firefox, or Edge.
+2. Navigate to: [http://localhost:5173](http://localhost:5173)
+
+You will now see the live dashboard! As the Packet Sniffer analyzes traffic, it will send the data to the API Server via WebSockets, which beams it in real-time to your React Dashboard. 
+
+---
+
+## Re-Training the Model
+
+If you ever want to re-train the AI model from scratch on the IDS2025 dataset:
 
 ```bash
 python backend/train_model.py              # Full pipeline (feature → GAN → XGBoost)
@@ -79,7 +100,7 @@ python backend/train_model.py --phase xgboost   # Only train XGBoost (if data al
 
 This runs: **Feature Engineering → GAN Augmentation (optional) → XGBoost Training** and saves all artifacts to `models/`.
 
-### 3. Run live detection via CLI
+### Run live detection manually via CLI
 
 ```bash
 python backend/run_detector.py                          # Capture on default interface
@@ -95,7 +116,7 @@ The CLI detector loads the trained model and captures live network traffic, prin
 
 ## Pipeline Overview
 
-### Phase 1: Feature Engineering (`notebooks/02_feature_engineering.ipynb`)
+### Phase 1: Feature Engineering (`backend/data_prep.py`)
 
 - Loads IDS2025.csv (91,830 rows × 80 columns)
 - Cleans infinite/NaN values (254 bad rows dropped)
@@ -108,17 +129,18 @@ The CLI detector loads the trained model and captures live network traffic, prin
 - Standardizes features with StandardScaler
 - Saves: `.npy` arrays, `robust_scaler.pkl`, `attack_classes.pkl`
 
-### Phase 2: GAN Data Augmentation (`notebooks/03_gan_augmentation.ipynb`)
+### Phase 2: GAN Data Augmentation (`backend/gan_augmenter.py`)
 
 - PyTorch GAN with Generator (3-layer) + Discriminator (3-layer)
 - Trains a separate GAN for each minority attack class
+- Evaluates real-time Discriminator Accuracy (D-Accuracy)
 - Generates synthetic samples to match the majority class size
 - Fixes severe class imbalance (e.g., Infiltration: 23 → 20,932 samples)
 - Outputs: `X_train_balanced.npy`, `y_train_balanced.npy`
 
 > **Note:** Phase 2 is optional. The pipeline works without it (99% accuracy), but GAN augmentation improves minority-class recall.
 
-### Phase 3: XGBoost Training (`notebooks/04_xgboost_training.ipynb`)
+### Phase 3: XGBoost Training (`backend/train_xgboost.py`)
 
 - Loads training data (balanced if GAN was run, otherwise original processed data)
 - XGBoost classifier: 300 trees, max_depth=7, learning_rate=0.08
@@ -148,119 +170,6 @@ Infiltration       1.00      0.67      0.80         6
 
 ---
 
-## Step-by-Step Guide to Running the NIDS Project
-
-Follow these exact steps from start to finish to get the AI-Powered Network Intrusion Detection System running on your local machine.
-
-### Phase 1: Environment Setup
-
-**Step 1: Install Python Dependencies**
-The backend requires Python 3.10+ and several machine learning and networking libraries. 
-1. Open your terminal in the root `Nid` folder.
-2. Run the following command:
-   ```cmd
-   pip install -r requirements.txt
-   ```
-
-**Step 2: Install Node.js Frontend Dependencies**
-The interactive dashboard is built with React and Vite. It requires Node.js to be installed on your system.
-1. Open your terminal.
-2. Navigate into the frontend directory:
-   ```cmd
-   cd frontend
-   ```
-3. Install the node packages:
-   ```cmd
-   npm install
-   ```
-4. Navigate back to the root directory when finished:
-   ```cmd
-   cd ..
-   ```
-
-### Phase 2: Launching the System
-
-We have created a single batch script that will launch the entire ecosystem (Frontend, Backend API, and Packet Sniffer) simultaneously. 
-
-**Step 3: Run the Startup Script**
-The Packet Sniffer requires raw socket access to capture live network traffic, which means it **must** be run with Administrator privileges on Windows.
-1. Open a terminal (Command Prompt or PowerShell) **as Administrator**.
-2. Navigate to the root `Nid` folder.
-3. Run the startup script:
-   ```cmd
-   .\start_all.bat
-   ```
-
-**Step 4: Verify the Services**
-The script will open three separate terminal windows:
-- **Window 1 (Frontend)**: Starts a Vite server on `http://localhost:5173`.
-- **Window 2 (API Server)**: Starts a Flask-SocketIO server on `http://localhost:5000`.
-- **Window 3 (Packet Sniffer)**: Loads the XGBoost model and begins capturing packets.
-
-### Phase 3: Viewing the Dashboard
-
-**Step 5: Open your Browser**
-1. Open Google Chrome, Firefox, or Edge.
-2. Navigate to: [http://localhost:5173](http://localhost:5173)
-
-You will now see the live dashboard! As the Packet Sniffer analyzes traffic, it will send the data to the API Server, which beams it in real-time to your Dashboard. 
-
-### (Optional) Phase 4: Training the Model
-
-If you ever want to re-train the AI model from scratch on the IDS2025 dataset:
-1. Ensure the raw dataset is placed in the correct `Data/raw` path.
-2. Run the training pipeline:
-   ```cmd
-   python backend/train_model.py
-   ```
-3. *(This will output new `.pkl` and `.json` model files into the `models/` directory, which the sniffer will automatically pick up).*
----
-
-## Bugs Fixed
-
-### `notebooks/02_feature_engineering.ipynb`
-| Bug | Fix |
-|-----|-----|
-| `FiileNotFoundError` (typo) | → `FileNotFoundError` |
-| Missing indentation on `if missing_count > 0:` block | Added proper indentation |
-| `y_raw = df[target_col]` inside error-raising `if` block | Moved outside so it actually executes |
-| Dataset path `"IDS2025.csv"` | → `"../Data/raw/IDS2025.csv"` |
-
-### `notebooks/03_gan_augmentation.ipynb` (12 bugs)
-| Bug | Fix |
-|-----|-----|
-| `np.reandom.seed` | → `np.random.seed` |
-| Class name `TabluarzGenerator` | → `TabularGenerator` |
-| `nn.linear` | → `nn.Linear` |
-| `nn.Tanh` (no parentheses) | → `nn.Tanh()` |
-| Class name `TabularDiscriminatore` | → `TabularDiscriminator` |
-| `input__dim` (double underscore) | → `input_dim` |
-| `X_minority.shappe` | → `X_minority.shape` |
-| `discriminator.paramter` | → `discriminator.parameters()` |
-| `DataLoader = DataLoader(...)` overwrites import | → `dataloader = DataLoader(...)` |
-| `real_samaples` in for-loop | → `real_samples` |
-| `real_samples` referenced but undefined | Variable now consistent |
-| `nn.Sigmoid` (no parentheses) | → `nn.Sigmoid()` |
-
-### `notebooks/04_xgboost_training.ipynb`
-| Bug | Fix |
-|-----|-----|
-| `model` out of scope in pickle cell | Pickle logic moved inside function |
-| Silent failure when GAN files missing | Falls back to original processed data |
-| Missing `pickle` import | Added |
-
-### `Data/processed/clean.ipynb`
-| Bug | Fix |
-|-----|-----|
-| `df['newlabel']` (wrong case) | → `df['newLabel']` |
-
-### `requirement.ttxt`
-| Missing | Added |
-|---------|-------|
-| `numpy`, `torch`, `joblib` | All added |
-
----
-
 ## Tech Stack
 
 - **Python 3.14**
@@ -270,9 +179,7 @@ If you ever want to re-train the AI model from scratch on the IDS2025 dataset:
 - **XGBoost** — Gradient boosted tree classifier
 - **PyTorch** — GAN implementation for data augmentation
 - **joblib** — Model serialization
-
----
-
-- **Socket.IO** — Real-time WebSockets
+- **Scapy** — Live packet capturing
+- **Flask-SocketIO** — Real-time WebSockets API
 - **React + Vite** — High-performance interactive dashboard frontend
-- **MongoDB** — Storage for captured network flows and intrusion logs
+- **SQLite** — Storage for captured network flows and intrusion logs

@@ -4,6 +4,8 @@ import { Shield, Eye, EyeOff } from 'lucide-react';
 export default function Login({ onLogin }) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -18,9 +20,20 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     setError('');
 
-    if (password.length > 0 && password.length < 4) {
-      setError('Password is too short. It must be at least 4 characters.');
-      return;
+    if (password.length > 0) {
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%]).{8,}$/;
+      if (!passwordRegex.test(password)) {
+        setError('Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character (!@#$%).');
+        return;
+      }
+    }
+    
+    if (isRegistering || isResetting) {
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      if (!emailRegex.test(email)) {
+        setError('Please enter a valid email address in a proper format (e.g., user@gmail.com).');
+        return;
+      }
     }
     
     if (isRegistering) {
@@ -43,15 +56,40 @@ export default function Login({ onLogin }) {
 
     setLoading(true);
 
+    if ((isRegistering || isResetting) && !isVerifyingCode) {
+      try {
+        const response = await fetch('http://localhost:5000/api/send-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: isRegistering ? 'register' : 'reset',
+            email: email,
+            username: isRegistering ? username : undefined
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to send verification code');
+        
+        setIsVerifyingCode(true);
+        setError('');
+        alert('A 4-digit verification code has been sent to your email.');
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     let endpoint = 'http://localhost:5000/api/login';
     let payload = { username, password };
 
     if (isRegistering) {
       endpoint = 'http://localhost:5000/api/register';
-      payload = { username, password, firstName, lastName, email, contact };
+      payload = { username, password, firstName, lastName, email, contact, code: verificationCode };
     } else if (isResetting) {
       endpoint = 'http://localhost:5000/api/reset-password';
-      payload = { email, newPassword: password };
+      payload = { email, newPassword: password, code: verificationCode };
     }
     
     try {
@@ -71,10 +109,14 @@ export default function Login({ onLogin }) {
       
       if (isRegistering) {
         setIsRegistering(false);
+        setIsVerifyingCode(false);
+        setVerificationCode('');
         setError('');
         alert('Registration successful! Please login with your new credentials.');
       } else if (isResetting) {
         setIsResetting(false);
+        setIsVerifyingCode(false);
+        setVerificationCode('');
         setPassword('');
         setError('');
         alert('Password reset successful! Please login.');
@@ -374,68 +416,77 @@ export default function Login({ onLogin }) {
           <form onSubmit={handleSubmit}>
             {error && <div className="error-msg">{error}</div>}
             
-            {isRegistering && !isResetting && (
+            {isVerifyingCode ? (
+              <div className="input-group">
+                <label className="input-label">4-Digit Verification Code</label>
+                <input type="text" className="input-field" placeholder="Enter code from email" value={verificationCode} onChange={(e) => setVerificationCode(e.target.value)} required pattern="[0-9]{4}" title="Please enter the 4-digit code" maxLength="4" />
+              </div>
+            ) : (
               <>
-                <div className="input-group">
-                  <label className="input-label">First Name</label>
-                  <input type="text" className="input-field" placeholder="John" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-                </div>
-                <div className="input-group">
-                  <label className="input-label">Last Name</label>
-                  <input type="text" className="input-field" placeholder="Doe" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
-                </div>
-              </>
-            )}
+                {isRegistering && !isResetting && (
+                  <>
+                    <div className="input-group">
+                      <label className="input-label">First Name</label>
+                      <input type="text" className="input-field" placeholder="John" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+                    </div>
+                    <div className="input-group">
+                      <label className="input-label">Last Name</label>
+                      <input type="text" className="input-field" placeholder="Doe" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+                    </div>
+                  </>
+                )}
 
-            {!isResetting && (
-              <div className="input-group">
-                <label className="input-label">Administrator ID (Username)</label>
-                <input type="text" className="input-field" placeholder="Enter your ID" value={username} onChange={(e) => setUsername(e.target.value)} required pattern="[A-Za-z_]+" title="Only letters and underscores are allowed (no numbers)" />
-              </div>
-            )}
-
-            {(isRegistering || isResetting) && (
-              <div className="input-group">
-                <label className="input-label">Email</label>
-                <input type="email" className="input-field" placeholder="Enter your email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-              </div>
-            )}
-            
-            <div className="input-group">
-              <label className="input-label">{isResetting ? "New Password" : "Password"}</label>
-              <div className="input-wrapper">
-                <input type={showPassword ? "text" : "password"} className="input-field" placeholder={isResetting ? "Create a new password" : (isRegistering ? "Create a password" : "Enter your password")} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={4} />
-                {password.length > 0 && (
-                  <div className="input-icon-right" onClick={() => setShowPassword(!showPassword)}>
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                {!isResetting && (
+                  <div className="input-group">
+                    <label className="input-label">Administrator ID (Username)</label>
+                    <input type="text" className="input-field" placeholder="Enter your ID" value={username} onChange={(e) => setUsername(e.target.value)} required pattern="[A-Za-z_]+" title="Only letters and underscores are allowed (no numbers)" />
                   </div>
                 )}
-              </div>
-            </div>
-            
-            {!isRegistering && !isResetting && (
-              <div className="actions-row">
-                <label className="checkbox-label">
-                  <input type="checkbox" className="checkbox" /> Remember me
-                </label>
-                <span className="forgot-link" style={{cursor:'pointer'}} onClick={() => { setIsResetting(true); setError(''); }}>Forgot Password?</span>
-              </div>
+
+                {(isRegistering || isResetting) && (
+                  <div className="input-group">
+                    <label className="input-label">Email</label>
+                    <input type="email" className="input-field" placeholder="Enter your email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  </div>
+                )}
+                
+                <div className="input-group">
+                  <label className="input-label">{isResetting ? "New Password" : "Password"}</label>
+                  <div className="input-wrapper">
+                    <input type={showPassword ? "text" : "password"} className="input-field" placeholder={isResetting ? "Create a new password" : (isRegistering ? "Create a password" : "Enter your password")} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
+                    {password.length > 0 && (
+                      <div className="input-icon-right" onClick={() => setShowPassword(!showPassword)}>
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {!isRegistering && !isResetting && (
+                  <div className="actions-row">
+                    <label className="checkbox-label">
+                      <input type="checkbox" className="checkbox" /> Remember me
+                    </label>
+                    <span className="forgot-link" style={{cursor:'pointer'}} onClick={() => { setIsResetting(true); setError(''); setIsVerifyingCode(false); }}>Forgot Password?</span>
+                  </div>
+                )}
+              </>
             )}
             
             <button type="submit" className="submit-btn" disabled={loading}>
-              {loading ? 'Processing...' : (isResetting ? 'Reset Password' : (isRegistering ? 'Register' : 'Login'))}
+              {loading ? 'Processing...' : (isVerifyingCode ? 'Verify & Submit' : (isResetting ? 'Send Reset Code' : (isRegistering ? 'Send Verification Code' : 'Login')))}
             </button>
 
             <div className="toggle-link">
               {isResetting ? (
                 <>
                   Remember your password?
-                  <span onClick={() => { setIsResetting(false); setError(''); }}>Login</span>
+                  <span onClick={() => { setIsResetting(false); setError(''); setIsVerifyingCode(false); }}>Login</span>
                 </>
               ) : (
                 <>
                   {isRegistering ? "Already have an account?" : "Don't have an account?"}
-                  <span onClick={() => { setIsRegistering(!isRegistering); setError(''); }}>
+                  <span onClick={() => { setIsRegistering(!isRegistering); setError(''); setIsVerifyingCode(false); }}>
                     {isRegistering ? "Login" : "Register"}
                   </span>
                 </>

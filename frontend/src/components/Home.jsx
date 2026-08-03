@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Shield, LayoutDashboard, Bell, AlertTriangle, Activity, Ban, ScanLine, Network as NetworkIcon, FileText, Settings as SettingsIcon, Users as UsersIcon, FileDigit, LogOut, ChevronDown } from "lucide-react";
 import Overview from "../pages/Overview";
 import Alerts from "../pages/Alerts";
@@ -9,8 +9,100 @@ import Settings from "../pages/Settings";
 import Users from "../pages/Users";
 import Logs from "../pages/Logs";
 
+import { io } from "socket.io-client";
+
 export default function Home({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [livePackets, setLivePackets] = useState([]);
+  const [liveAlerts, setLiveAlerts] = useState([]);
+  const [stats, setStats] = useState({
+    totalAnalyzed: 0,
+    threatsFound: 0,
+    blocked: 0,
+    monitoredHosts: 0
+  });
+  const alertCounterRef = useRef(0);
+
+  React.useEffect(() => {
+    fetch('http://localhost:5000/api/stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data.threatsFound) {
+          setStats(s => ({ ...s, threatsFound: data.threatsFound }));
+          alertCounterRef.current = data.threatsFound;
+        }
+      })
+      .catch(err => console.error(err));
+
+    const socket = io("http://localhost:5000");
+    const hostsSet = new Set();
+    
+    socket.on("packet_update", (data) => {
+      hostsSet.add(data.src);
+      hostsSet.add(data.dst);
+
+      setStats(prev => {
+        let newThreats = prev.threatsFound;
+        let newBlocked = prev.blocked;
+        if (data.verdict !== "Normal") {
+          newThreats++;
+          if (data.sev === "High" || data.sev === "Critical") newBlocked++;
+        }
+        return {
+          totalAnalyzed: prev.totalAnalyzed + 1,
+          threatsFound: newThreats,
+          blocked: newBlocked,
+          monitoredHosts: hostsSet.size
+        };
+      });
+
+      const newPacket = {
+        id: data.id || Math.random().toString(36).substr(2, 9),
+        time: new Date(data.timestamp),
+        src: data.src,
+        dst: data.dst,
+        proto: data.proto,
+        size: data.length,
+        flags: "...",
+        sev: data.sev,
+        type: data.type || data.verdict,
+        verdict: data.verdict || data.type
+      };
+
+      setLivePackets(prev => [newPacket, ...prev].slice(0, 50));
+
+      if (data.verdict !== "Normal" && data.type !== "Normal") {
+        alertCounterRef.current += 1;
+        const formattedId = `ALT-${String(alertCounterRef.current).padStart(4, '0')}`;
+        
+        const attackType = data.type || data.verdict || 'Unknown Threat';
+        let severity = data.sev;
+        if (!severity) {
+            if (['Dos/DDos', 'Infiltration', 'Botnet ARES'].includes(attackType)) {
+                severity = 'Critical';
+            } else if (['Web Attack', 'Brute Force'].includes(attackType)) {
+                severity = 'High';
+            } else if (['PortScan'].includes(attackType)) {
+                severity = 'Medium';
+            } else {
+                severity = 'Low';
+            }
+        }
+
+        const newAlert = {
+          id: formattedId,
+          time: new Date(data.timestamp).toLocaleString(),
+          type: attackType,
+          severity: severity,
+          srcIp: data.src,
+          destIp: data.dst,
+        };
+        setLiveAlerts(prev => [newAlert, ...prev].slice(0, 100));
+      }
+    });
+
+    return () => socket.disconnect();
+  }, []);
 
   return (
     <div className="dash-root">
@@ -409,10 +501,7 @@ export default function Home({ user, onLogout }) {
             <div className="date-picker">
               May 16 - May 22, 2024 <ChevronDown size={14} />
             </div>
-            <div className="icon-btn">
-              <Bell size={20} />
-              <div className="badge"></div>
-            </div>
+
             <div className="user-profile">
               <div className="avatar">{user?.firstName?.[0] || 'A'}</div>
               <div className="user-info">
@@ -423,8 +512,8 @@ export default function Home({ user, onLogout }) {
           </div>
         </div>
 
-        {activeTab === 'dashboard' && <Overview />}
-        {activeTab === 'alerts' && <Alerts />}
+        {activeTab === 'dashboard' && <Overview stats={stats} packets={livePackets} alerts={liveAlerts} />}
+        {activeTab === 'alerts' && <Alerts alerts={liveAlerts} />}
         {activeTab === 'detections' && <Detections />}
         {activeTab === 'network' && <Network />}
         {activeTab === 'reports' && <Reports />}

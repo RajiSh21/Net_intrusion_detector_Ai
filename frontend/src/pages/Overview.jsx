@@ -4,64 +4,8 @@ import { io } from "socket.io-client";
 
 // Real-time packet table logic driven by websockets
 
-export default function Overview() {
-  const [packets, setPackets] = useState([]);
-  const [totalAnalyzed, setTotalAnalyzed] = useState(0);
-  const [threatsFound, setThreatsFound] = useState(0);
-  const [blocked, setBlocked] = useState(0);
-  const [monitoredHosts, setMonitoredHosts] = useState(0);
-  const [recentAlerts, setRecentAlerts] = useState([]);
-  const hostsSet = new Set();
-
-  useEffect(() => {
-    // Fetch initial total alerts from SQLite DB
-    fetch('http://localhost:5000/api/stats')
-      .then(res => res.json())
-      .then(data => {
-        if (data.threatsFound) setThreatsFound(data.threatsFound);
-      })
-      .catch(err => console.error(err));
-
-    const socket = io("http://localhost:5000");
-    socket.on("connect", () => console.log("Overview: Connected to API Server for live stream"));
-    
-    socket.on("packet_update", (data) => {
-      setTotalAnalyzed(prev => prev + 1);
-      
-      hostsSet.add(data.src);
-      hostsSet.add(data.dst);
-      setMonitoredHosts(hostsSet.size);
-
-      const newPacket = {
-        id: data.id || Math.random().toString(36).substr(2, 9),
-        time: new Date(data.timestamp),
-        src: data.src,
-        dst: data.dst,
-        proto: data.proto,
-        size: data.length,
-        flags: "...", // Dynamic flags not strictly needed
-        sev: data.sev,
-        type: data.type || data.verdict,
-        verdict: data.verdict || data.type
-      };
-
-      setPackets(prev => [newPacket, ...prev].slice(0, 50));
-
-      if (data.verdict !== "Normal") {
-        setThreatsFound(prev => prev + 1);
-        if (data.sev === "High" || data.sev === "Critical") setBlocked(prev => prev + 1);
-        
-        setRecentAlerts(prev => {
-          const alert = { sev: data.sev, type: data.type, src: data.src, time: 'Just now' };
-          return [alert, ...prev].slice(0, 4);
-        });
-      }
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
+export default function Overview({ stats, packets, alerts }) {
+  const recentAlerts = alerts.slice(0, 4);
 
   return (
     <div className="dash-container">
@@ -73,7 +17,7 @@ export default function Overview() {
             Total Alerts
           </div>
           <div className="stat-val-row">
-            <span className="stat-val">{totalAnalyzed}</span>
+            <span className="stat-val">{stats.totalAnalyzed}</span>
             <span className="stat-trend down">↓ 12%</span>
           </div>
           <div className="stat-sub">vs last 7 days</div>
@@ -84,7 +28,7 @@ export default function Overview() {
             Critical Alerts
           </div>
           <div className="stat-val-row">
-            <span className="stat-val">{threatsFound}</span>
+            <span className="stat-val">{stats.threatsFound}</span>
             <span className="stat-trend down">↑ 75%</span>
           </div>
           <div className="stat-sub">vs last 7 days</div>
@@ -95,7 +39,7 @@ export default function Overview() {
             Blocked Attacks
           </div>
           <div className="stat-val-row">
-            <span className="stat-val">{blocked}</span>
+            <span className="stat-val">{stats.blocked}</span>
             <span className="stat-trend up">↑ 20%</span>
           </div>
           <div className="stat-sub">vs last 7 days</div>
@@ -106,7 +50,7 @@ export default function Overview() {
             Monitored Hosts
           </div>
           <div className="stat-val-row">
-            <span className="stat-val">{monitoredHosts}</span>
+            <span className="stat-val">{stats.monitoredHosts}</span>
             <span className="stat-trend up">↑ 5%</span>
           </div>
           <div className="stat-sub">vs last 7 days</div>
@@ -164,7 +108,7 @@ export default function Overview() {
               <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#8b5cf6" strokeWidth="6" strokeDasharray="10 90" strokeDashoffset="-90" />
             </svg>
             <div className="donut-inner">
-              <span className="donut-val">{threatsFound}</span>
+              <span className="donut-val">{stats.threatsFound}</span>
               <span className="donut-lbl">Total</span>
             </div>
           </div>
@@ -187,8 +131,8 @@ export default function Overview() {
             {recentAlerts.map((alert, i) => (
               <div className="alert-item" key={i}>
                 <div className="alert-left">
-                  <div className={`alert-badge ${(alert.sev || 'High').toLowerCase()}`}>{alert.sev || 'High'}</div>
-                  <div className="alert-text">{alert.type || alert.verdict || 'Alert'} from <span style={{color: '#64748b'}}>{alert.src}</span></div>
+                  <div className={`alert-badge ${(alert.severity || 'High').toLowerCase()}`}>{alert.severity || 'High'}</div>
+                  <div className="alert-text">{alert.type || 'Alert'} from <span style={{color: '#64748b'}}>{alert.srcIp}</span></div>
                 </div>
                 <div className="alert-sub">{alert.time}</div>
               </div>
