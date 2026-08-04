@@ -1,105 +1,60 @@
 import React from 'react';
-import { Cpu, CheckCircle2, AlertTriangle, ScanLine } from 'lucide-react';
+import { AlertTriangle, Server, Database, BrainCircuit, Users } from 'lucide-react';
 
-export default function Detections() {
+export default function Detections({ modelInfo }) {
+  const isLoaded = !!modelInfo?.algorithm;
+
   return (
-    <div className="dash-container">
-      <div className="charts-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        
-        {/* Model Status Card */}
-        <div className="card">
-          <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Cpu size={20} color="#2563eb" /> AI Detection Engine
-          </div>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '24px' }}>
-            <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Active Model</div>
-              <div style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a' }}>Random Forest (GAN-Augmented)</div>
-            </div>
-            <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Base Accuracy</div>
-              <div style={{ fontSize: '16px', fontWeight: '600', color: '#16a34a' }}>99.93%</div>
-            </div>
-            <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Avg Inference Time</div>
-              <div style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a' }}>0.015 ms</div>
-            </div>
-            <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Status</div>
-              <div style={{ fontSize: '16px', fontWeight: '600', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <CheckCircle2 size={16} /> Online
+    <div style={{ animation: "fadeIn 0.3s ease" }}>
+      <p style={{ fontSize: "16px", fontWeight: "500", margin: "0 0 2px" }}>Model performance</p>
+      <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: "0 0 16px" }}>Real-time details from backend engine</p>
+      
+      {!isLoaded ? (
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-secondary)", background: "var(--surface-1)", borderRadius: "var(--radius)", border: "1px solid var(--border)" }}>
+          Connecting to backend for model info...
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+            <div className="card-anim" style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: "1.25rem", border: "1px solid var(--border)" }}>
+              <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 8px", fontWeight: "500" }}>Algorithm</p>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <BrainCircuit size={20} color="var(--text-accent)" />
+                <p style={{ fontSize: "24px", fontWeight: "600", margin: 0, letterSpacing: "-0.5px" }}>{modelInfo.algorithm}</p>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* GAN Augmentation Card */}
-        <div className="card">
-          <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ScanLine size={20} color="#8b5cf6" /> Adversarial Defense (GAN)
-          </div>
-          <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6' }}>
-            The detection engine is currently utilizing a Generative Adversarial Network to generate synthetic attack signatures. This allows the classifier to proactively learn zero-day attack patterns before they hit your network.
-          </p>
-          
-          <div style={{ marginTop: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', fontWeight: '500' }}>
-              <span style={{ color: '#475569' }}>Generator Loss</span>
-              <span style={{ color: '#8b5cf6' }}>0.412</span>
+            
+            <div className="card-anim" style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: "1.25rem", border: "1px solid var(--border)" }}>
+              <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 8px", fontWeight: "500" }}>Reported Accuracy</p>
+              <p style={{ fontSize: "28px", fontWeight: "600", margin: 0, letterSpacing: "-0.5px", color: "var(--text-success)" }}>{modelInfo.accuracy}</p>
             </div>
-            <div style={{ width: '100%', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ width: '41%', height: '100%', background: '#8b5cf6' }} />
+
+            <div className="card-anim" style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: "1.25rem", border: "1px solid var(--border)" }}>
+              <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 8px", fontWeight: "500" }}>Training Samples</p>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Database size={18} color="var(--text-secondary)" />
+                <p style={{ fontSize: "24px", fontWeight: "600", margin: 0, letterSpacing: "-0.5px" }}>{modelInfo.trainingSamples.toLocaleString()}</p>
+              </div>
+            </div>
+
+            <div className="card-anim" style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: "1.25rem", border: "1px solid var(--border)" }}>
+              <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 8px", fontWeight: "500" }}>GAN Augmented</p>
+              <p style={{ fontSize: "24px", fontWeight: "600", margin: 0, letterSpacing: "-0.5px" }}>{modelInfo.ganAugmented ? 'Yes' : 'No'}</p>
             </div>
           </div>
 
-          <div style={{ marginTop: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', fontWeight: '500' }}>
-              <span style={{ color: '#475569' }}>Discriminator Loss</span>
-              <span style={{ color: '#3b82f6' }}>0.285</span>
-            </div>
-            <div style={{ width: '100%', height: '6px', background: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ width: '28%', height: '100%', background: '#3b82f6' }} />
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <div className="card" style={{ marginTop: '24px' }}>
-        <div className="card-title">Live Classification Feed</div>
-        <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px' }}>Simulated real-time packet inspection results.</p>
-        
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
-                <th style={{ padding: '16px 12px', fontWeight: '500' }}>Target</th>
-                <th style={{ padding: '16px 12px', fontWeight: '500' }}>Protocol</th>
-                <th style={{ padding: '16px 12px', fontWeight: '500' }}>Predicted Class</th>
-                <th style={{ padding: '16px 12px', fontWeight: '500' }}>Confidence</th>
-                <th style={{ padding: '16px 12px', fontWeight: '500' }}>Latency</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({length: 5}).map((_, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', color: '#0f172a' }}>
-                  <td style={{ padding: '16px 12px', fontFamily: 'monospace' }}>10.0.0.{Math.floor(Math.random() * 255)}:443</td>
-                  <td style={{ padding: '16px 12px' }}>TCP</td>
-                  <td style={{ padding: '16px 12px', color: '#16a34a', fontWeight: '500' }}>Normal Traffic</td>
-                  <td style={{ padding: '16px 12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ flex: 1, height: '6px', background: '#f1f5f9', borderRadius: '3px' }}>
-                        <div style={{ width: '99%', height: '100%', background: '#16a34a', borderRadius: '3px' }} />
-                      </div>
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>99.9%</span>
-                    </div>
-                  </td>
-                  <td style={{ padding: '16px 12px', color: '#64748b' }}>0.01ms</td>
-                </tr>
+          <div className="card-anim" style={{ background: "var(--surface-1)", border: "1px solid var(--border)", borderRadius: "12px", padding: "1.25rem", marginBottom: "12px" }}>
+            <p style={{ fontSize: "14px", fontWeight: "500", margin: "0 0 10px" }}>Detected Threat Classes</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {(modelInfo.classes || []).map((cls, idx) => (
+                <span key={idx} style={{ background: "var(--bg-accent)", color: "var(--text-accent)", padding: "6px 12px", borderRadius: "16px", fontSize: "13px", fontWeight: "500" }}>
+                  {cls}
+                </span>
               ))}
-            </tbody>
-          </table>
-      </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

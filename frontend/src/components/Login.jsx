@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Shield, Eye, EyeOff } from 'lucide-react';
+import { Shield, Eye, EyeOff, Moon, Sun, ArrowLeft } from 'lucide-react';
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, theme, toggleTheme }) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
@@ -15,6 +15,8 @@ export default function Login({ onLogin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const isDark = theme === 'dark';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -133,129 +135,107 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-root">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
         .login-root {
-          font-family: 'Inter', sans-serif;
+          font-family: 'Outfit', sans-serif;
           min-height: 100vh;
           display: flex;
-          background: #f1f5f9;
-        }
-
-        .left-pane {
-          flex: 1.2;
-          background: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e3a8a 100%);
-          display: flex;
-          flex-direction: column;
-          padding: 40px;
-          color: white;
+          align-items: center;
+          justify-content: center;
+          background: ${isDark ? '#0f172a' : '#f8fafc'};
           position: relative;
           overflow: hidden;
+          transition: background 0.3s ease;
         }
 
-        /* Connecting nodes background effect */
-        .left-pane::before {
+        .login-root::before, .login-root::after {
           content: '';
           position: absolute;
-          top: 0; left: 0; right: 0; bottom: 0;
-          background-image: radial-gradient(circle at 50% 50%, rgba(56,189,248,0.1) 0%, transparent 60%);
-          opacity: 0.8;
-          pointer-events: none;
+          border-radius: 50%;
+          filter: blur(80px);
+          z-index: 0;
+          animation: float 10s ease-in-out infinite alternate;
+        }
+        
+        .login-root::before {
+          width: 600px;
+          height: 600px;
+          background: rgba(56, 189, 248, 0.15);
+          top: -100px;
+          left: -100px;
+        }
+        
+        .login-root::after {
+          width: 500px;
+          height: 500px;
+          background: rgba(167, 139, 250, 0.15);
+          bottom: -50px;
+          right: -100px;
+          animation-delay: -5s;
+        }
+
+        @keyframes float {
+          0% { transform: translate(0, 0) scale(1); }
+          100% { transform: translate(30px, 50px) scale(1.1); }
+        }
+
+        .auth-container {
+          position: relative;
+          z-index: 10;
+          width: 100%;
+          max-width: 440px;
+          padding: 20px;
+        }
+
+        .auth-card {
+          background: ${isDark ? 'rgba(30, 41, 59, 0.6)' : 'rgba(255, 255, 255, 0.6)'};
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)'};
+          border-radius: 24px;
+          padding: 48px 40px;
+          box-shadow: 0 20px 40px -10px rgba(0,0,0,0.05);
+          animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
         }
 
         .brand-header {
           display: flex;
-          align-items: center;
-          gap: 12px;
-          z-index: 10;
-        }
-
-        .brand-title-left {
-          font-size: 20px;
-          font-weight: 700;
-          line-height: 1.2;
-        }
-
-        .brand-sub-left {
-          font-size: 11px;
-          color: #94a3b8;
-        }
-
-        .hero-content {
-          margin-top: auto;
-          margin-bottom: auto;
-          z-index: 10;
-          display: flex;
           flex-direction: column;
           align-items: center;
+          margin-bottom: 32px;
           text-align: center;
         }
 
-        .hero-shield-wrap {
-          margin-bottom: 40px;
-          position: relative;
-        }
-        
-        .hero-shield-bg {
-          position: absolute;
-          top: 50%; left: 50%;
-          transform: translate(-50%, -50%);
-          width: 200px; height: 200px;
-          background: radial-gradient(circle, rgba(56,189,248,0.2) 0%, transparent 70%);
-        }
-
-        .hero-title {
-          font-size: 32px;
-          font-weight: 600;
-          margin-bottom: 12px;
-        }
-        
-        .hero-title span {
-          color: #60a5fa;
-        }
-
-        .hero-desc {
-          color: #94a3b8;
-          font-size: 14px;
-          line-height: 1.6;
-          max-width: 300px;
-        }
-
-        .footer-text {
-          font-size: 11px;
-          color: #64748b;
-          margin-top: auto;
-          z-index: 10;
-        }
-
-        .right-pane {
-          flex: 1;
+        .brand-icon-wrap {
+          width: 64px;
+          height: 64px;
+          background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%);
+          border-radius: 16px;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 40px;
-        }
-
-        .auth-card {
-          background: white;
-          border-radius: 16px;
-          padding: 40px;
-          width: 100%;
-          max-width: 420px;
-          box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
+          margin-bottom: 16px;
+          box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
         }
 
         .card-title {
-          font-size: 24px;
-          font-weight: 600;
-          color: #0f172a;
-          margin-bottom: 8px;
+          font-size: 28px;
+          font-weight: 700;
+          color: ${isDark ? '#f8fafc' : '#0f172a'};
+          margin-bottom: 6px;
+          letter-spacing: -0.5px;
         }
 
         .card-sub {
-          font-size: 13px;
-          color: #64748b;
-          margin-bottom: 30px;
+          font-size: 14px;
+          color: ${isDark ? '#94a3b8' : '#64748b'};
+          font-weight: 400;
         }
 
         .input-group {
@@ -266,7 +246,7 @@ export default function Login({ onLogin }) {
           display: block;
           font-size: 13px;
           font-weight: 500;
-          color: #334155;
+          color: ${isDark ? '#cbd5e1' : '#334155'};
           margin-bottom: 8px;
         }
 
@@ -276,36 +256,43 @@ export default function Login({ onLogin }) {
 
         .input-field {
           width: 100%;
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
-          color: #0f172a;
-          padding: 12px 14px;
-          border-radius: 8px;
+          background: ${isDark ? 'rgba(15, 23, 42, 0.6)' : 'rgba(255, 255, 255, 0.8)'};
+          border: 1px solid ${isDark ? 'rgba(51, 65, 85, 0.8)' : 'rgba(226, 232, 240, 0.8)'};
+          color: ${isDark ? '#f8fafc' : '#0f172a'};
+          padding: 14px 16px;
+          border-radius: 12px;
           font-family: inherit;
           font-size: 14px;
-          transition: all 0.2s;
+          transition: all 0.2s ease;
           outline: none;
+          box-shadow: inset 0 2px 4px rgba(0,0,0,0.01);
         }
 
         .input-field:focus {
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+          border-color: #38bdf8;
+          background: ${isDark ? '#0f172a' : '#ffffff'};
+          box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.1), inset 0 2px 4px rgba(0,0,0,0.01);
         }
         
         .input-icon-right {
           position: absolute;
-          right: 14px;
+          right: 16px;
           top: 50%;
           transform: translateY(-50%);
           color: #94a3b8;
           cursor: pointer;
+          transition: color 0.2s;
+        }
+
+        .input-icon-right:hover {
+          color: ${isDark ? '#f8fafc' : '#0f172a'};
         }
 
         .actions-row {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 24px;
+          margin-bottom: 28px;
           font-size: 13px;
         }
 
@@ -313,104 +300,124 @@ export default function Login({ onLogin }) {
           display: flex;
           align-items: center;
           gap: 8px;
-          color: #475569;
+          color: ${isDark ? '#cbd5e1' : '#475569'};
           cursor: pointer;
+          font-weight: 500;
         }
 
         .checkbox {
           accent-color: #2563eb;
           width: 16px;
           height: 16px;
+          border-radius: 4px;
         }
 
         .forgot-link {
-          color: #2563eb;
+          color: #38bdf8;
           text-decoration: none;
+          font-weight: 500;
         }
         .forgot-link:hover { text-decoration: underline; }
 
         .submit-btn {
           width: 100%;
-          background: #2563eb;
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
           color: white;
           border: none;
-          padding: 14px;
-          border-radius: 8px;
-          font-weight: 500;
+          padding: 16px;
+          border-radius: 12px;
+          font-weight: 600;
           font-size: 15px;
           cursor: pointer;
-          transition: background 0.2s;
+          transition: all 0.2s;
           margin-bottom: 24px;
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
         }
 
         .submit-btn:hover {
-          background: #1d4ed8;
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
         }
-        .submit-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+        .submit-btn:active {
+          transform: translateY(1px);
+          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+        }
+        .submit-btn:disabled { 
+          opacity: 0.7; 
+          cursor: not-allowed; 
+          transform: none;
+        }
 
         .toggle-link {
           text-align: center;
-          font-size: 13px;
-          color: #64748b;
+          font-size: 14px;
+          color: ${isDark ? '#94a3b8' : '#64748b'};
         }
 
         .toggle-link span {
-          color: #2563eb;
+          color: #38bdf8;
           cursor: pointer;
-          font-weight: 500;
-          margin-left: 4px;
+          font-weight: 600;
+          margin-left: 6px;
         }
         .toggle-link span:hover { text-decoration: underline; }
 
         .error-msg {
-          color: #e11d48;
+          color: ${isDark ? '#f87171' : '#e11d48'};
           font-size: 13px;
-          margin-bottom: 16px;
-          background: #ffe4e6;
-          padding: 10px;
-          border-radius: 6px;
+          margin-bottom: 20px;
+          background: ${isDark ? 'rgba(153, 27, 27, 0.2)' : 'rgba(255, 228, 230, 0.7)'};
+          border: 1px solid ${isDark ? 'rgba(153, 27, 27, 0.5)' : 'rgba(254, 205, 211, 0.8)'};
+          padding: 12px 16px;
+          border-radius: 10px;
+          font-weight: 500;
+          backdrop-filter: blur(4px);
         }
-        
-        @media (max-width: 900px) {
-          .left-pane { display: none; }
+
+        .top-nav {
+          position: absolute;
+          top: 24px;
+          right: 32px;
+          z-index: 20;
+        }
+
+        .theme-btn {
+          background: transparent;
+          border: none;
+          color: ${isDark ? '#94a3b8' : '#475569'};
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 8px;
+          border-radius: 50%;
+          transition: all 0.2s;
+        }
+
+        .theme-btn:hover {
+          background: ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'};
+          color: ${isDark ? '#f8fafc' : '#0f172a'};
         }
       `}</style>
       
-      <div className="left-pane">
-        <div className="brand-header">
-          <Shield size={28} color="#38bdf8" strokeWidth={1.5} />
-          <div>
-            <div className="brand-title-left">NIDS</div>
-            <div className="brand-sub-left">Network Intrusion<br/>Detection System</div>
-          </div>
-        </div>
-        
-        <div className="hero-content">
-          <div className="hero-shield-wrap">
-            <div className="hero-shield-bg" />
-            <Shield size={120} color="#38bdf8" strokeWidth={1} style={{ position: 'relative', zIndex: 2 }} />
-          </div>
-          <div className="hero-title">
-            Secure Networks.<br/>
-            <span>Safer Tomorrow.</span>
-          </div>
-          <div className="hero-desc">
-            Monitor, Detect, Respond. Protect your network from cyber threats in real-time.
-          </div>
-        </div>
-        
-        <div className="footer-text">
-          © 2024 NIDS. All rights reserved.
-        </div>
+      <div className="top-nav">
+        <button className="theme-btn" onClick={toggleTheme} title="Toggle Theme">
+          {isDark ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
       </div>
-
-      <div className="right-pane">
+      
+      <div className="auth-container">
         <div className="auth-card">
-          <div className="card-title">
-            {isResetting ? "Reset Password" : (isRegistering ? "Create Account" : "Welcome Back")}
-          </div>
-          <div className="card-sub">
-            {isResetting ? "Enter your email to reset your password" : (isRegistering ? "Join NIDS to secure your network" : "Sign in to continue to NIDS")}
+          <div className="brand-header">
+            <div className="brand-icon-wrap">
+              <Shield size={32} color="white" strokeWidth={1.5} />
+            </div>
+            <div className="card-title">
+              {isResetting ? "Reset Password" : (isRegistering ? "Create Account" : "Welcome Back")}
+            </div>
+            <div className="card-sub">
+              {isResetting ? "Enter your email to reset your password" : (isRegistering ? "Join NIDS to secure your network" : "Sign in to continue to NIDS")}
+            </div>
           </div>
 
           <form onSubmit={handleSubmit}>

@@ -1,18 +1,15 @@
-import React, { useState, useRef } from "react";
-import { Shield, LayoutDashboard, Bell, AlertTriangle, Activity, Ban, ScanLine, Network as NetworkIcon, FileText, Settings as SettingsIcon, Users as UsersIcon, FileDigit, LogOut, ChevronDown } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { ShieldCheck, LayoutDashboard, Bell, List, BarChart3, Settings as SettingsIcon, User, LogOut, ChevronDown, AlertTriangle, Moon, Sun } from "lucide-react";
 import Overview from "../pages/Overview";
 import Alerts from "../pages/Alerts";
-import Detections from "../pages/Detections";
-import Network from "../pages/Network";
-import Reports from "../pages/Reports";
-import Settings from "../pages/Settings";
-import Users from "../pages/Users";
-import Logs from "../pages/Logs";
+import Detections from "../pages/Detections"; // Mapped to Model performance
+import Logs from "../pages/Logs"; // Mapped to Traffic log
+import Settings from "../pages/Settings"; // Mapped to Admin
 
 import { io } from "socket.io-client";
 
-export default function Home({ user, onLogout }) {
-  const [activeTab, setActiveTab] = useState('dashboard');
+export default function Home({ user, onLogout, theme, toggleTheme }) {
+  const [activeTab, setActiveTab] = useState('overview');
   const [livePackets, setLivePackets] = useState([]);
   const [liveAlerts, setLiveAlerts] = useState([]);
   const [stats, setStats] = useState({
@@ -21,9 +18,11 @@ export default function Home({ user, onLogout }) {
     blocked: 0,
     monitoredHosts: 0
   });
+  const [modelInfo, setModelInfo] = useState({});
   const alertCounterRef = useRef(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetch('http://localhost:5000/api/stats')
       .then(res => res.json())
       .then(data => {
@@ -101,425 +100,249 @@ export default function Home({ user, onLogout }) {
       }
     });
 
+    fetch('http://localhost:5000/api/model_info')
+      .then(res => res.json())
+      .then(data => setModelInfo(data))
+      .catch(err => console.error(err));
+
     return () => socket.disconnect();
   }, []);
 
+  const activeAlertsCount = liveAlerts.length; // Or stats.threatsFound if you prefer
+
+  const lightThemeCss = `
+    :root {
+      --surface-1: #ffffff;
+      --surface-2: rgba(255, 255, 255, 0.7);
+      --surface-3: #ffffff;
+      --border: #e2e8f0;
+      --bg-base: #f8fafc;
+      --bg-accent: rgba(59, 130, 246, 0.1);
+      --text-main: #0f172a;
+      --text-accent: #2563eb;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --text-danger: #ef4444;
+      --bg-danger: rgba(239, 68, 68, 0.1);
+      --fill-danger: #ef4444;
+      --text-warning: #f59e0b;
+      --bg-warning: rgba(245, 158, 11, 0.1);
+      --fill-warning: #f59e0b;
+      --text-success: #10b981;
+      --fill-success: #10b981;
+      --fill-accent: #3b82f6;
+      --radius: 12px;
+      --shadow-popover: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    }
+  `;
+
+  const darkThemeCss = `
+    :root {
+      --surface-1: #1e293b;
+      --surface-2: rgba(30, 41, 59, 0.7);
+      --surface-3: #334155;
+      --border: #334155;
+      --bg-base: #0f172a;
+      --bg-accent: rgba(56, 189, 248, 0.15);
+      --text-main: #f8fafc;
+      --text-accent: #38bdf8;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --text-danger: #f87171;
+      --bg-danger: rgba(248, 113, 113, 0.1);
+      --fill-danger: #f87171;
+      --text-warning: #fbbf24;
+      --bg-warning: rgba(251, 191, 36, 0.1);
+      --fill-warning: #fbbf24;
+      --text-success: #34d399;
+      --fill-success: #34d399;
+      --fill-accent: #38bdf8;
+      --radius: 12px;
+      --shadow-popover: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+      --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+    }
+  `;
+
   return (
-    <div className="dash-root">
+    <div style={{
+      fontFamily: "'Inter', sans-serif",
+      backgroundColor: "var(--bg-base)",
+      color: "var(--text-main)",
+      minHeight: "100vh",
+      display: "flex",
+      flexDirection: "column"
+    }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-        .dash-root {
-          font-family: 'Inter', sans-serif;
-          display: flex;
-          height: 100vh;
-          background: #f1f5f9;
-          overflow: hidden;
-          color: #0f172a;
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        
+        ${theme === 'light' ? lightThemeCss : darkThemeCss}
+        
+        body {
+          font-family: 'Outfit', sans-serif;
+          background-color: var(--bg-base);
+          background-image: ${theme === 'light' ? 'radial-gradient(at 0% 0%, hsla(210,100%,97%,1) 0, transparent 50%), radial-gradient(at 100% 100%, hsla(210,100%,97%,1) 0, transparent 50%)' : 'radial-gradient(at 0% 0%, rgba(30,41,59,0.5) 0, transparent 50%), radial-gradient(at 100% 100%, rgba(30,41,59,0.5) 0, transparent 50%)'};
         }
 
-        /* Sidebar */
-        .sidebar {
-          width: 260px;
-          background: #0f172a;
-          color: #94a3b8;
-          display: flex;
-          flex-direction: column;
-          border-right: 1px solid #1e293b;
-        }
-
-        .sidebar-brand {
-          padding: 24px;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          color: white;
-          border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-
-        .sidebar-brand-text {
-          font-weight: 600;
-          font-size: 18px;
-          letter-spacing: 0.5px;
-          display: flex;
-          flex-direction: column;
-        }
-        .sidebar-brand-sub {
-          font-size: 11px;
-          color: #38bdf8;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          font-weight: 700;
-          margin-top: 2px;
-        }
-
-        .nav-list {
-          padding: 20px 12px;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          flex: 1;
-        }
-
-        .nav-item {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px 16px;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: all 0.2s;
-          font-size: 14px;
-          font-weight: 500;
-        }
-
-        .nav-item:hover {
-          background: rgba(255,255,255,0.05);
-          color: white;
-        }
-
-        .nav-item.active {
-          background: #2563eb;
-          color: white;
-        }
-
-        .sidebar-footer {
-          padding: 20px;
-          border-top: 1px solid rgba(255,255,255,0.05);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .sidebar-user {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .sidebar-user-avatar {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          background: #1e293b;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #38bdf8;
-          font-weight: 600;
-          font-size: 14px;
-        }
-
-        .sidebar-user-info {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .sidebar-user-name {
-          color: white;
-          font-size: 13px;
-          font-weight: 500;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          max-width: 120px;
-        }
-
-        .sidebar-user-role {
-          color: #64748b;
-          font-size: 11px;
-        }
-
-        .logout-btn-icon {
-          color: #64748b;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 8px;
-          border-radius: 6px;
-        }
-        .logout-btn-icon:hover { 
-          color: white; 
-          background: rgba(255,255,255,0.05);
-        }
-
-        /* Main Content */
-        .main-content {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          overflow-y: auto;
-        }
-
-        /* Topbar */
-        .topbar {
-          background: white;
-          padding: 20px 32px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          border-bottom: 1px solid #e2e8f0;
-          position: sticky;
-          top: 0;
-          z-index: 10;
-        }
-
-        .page-title h1 {
-          font-size: 24px;
-          font-weight: 600;
-          margin: 0 0 4px 0;
-          color: #0f172a;
-        }
-        .page-title p {
-          margin: 0;
-          color: #64748b;
-          font-size: 14px;
-        }
-
-        .top-actions {
-          display: flex;
-          align-items: center;
-          gap: 24px;
-        }
-
-        .date-picker {
+        .navitem {
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 8px 12px;
-          border: 1px solid #e2e8f0;
-          border-radius: 6px;
-          font-size: 13px;
-          color: #475569;
-          background: #f8fafc;
-          cursor: pointer;
-        }
-
-        .icon-btn {
-          position: relative;
-          color: #64748b;
-          cursor: pointer;
-        }
-        .icon-btn .badge {
-          position: absolute;
-          top: -2px; right: -2px;
-          width: 8px; height: 8px;
-          background: #ef4444;
-          border-radius: 50%;
-        }
-
-        .user-profile {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-        .avatar {
-          width: 36px; height: 36px;
-          background: #e0e7ff;
-          border-radius: 50%;
-          display: flex; align-items: center; justify-content: center;
-          color: #4f46e5;
-          font-weight: 600;
-          font-size: 14px;
-        }
-        .user-info { display: flex; flex-direction: column; }
-        .user-name { font-size: 14px; font-weight: 600; color: #0f172a; }
-        .user-role { font-size: 12px; color: #64748b; }
-
-        /* Dashboard Grid */
-        .dash-container {
-          padding: 32px;
-          display: flex;
-          flex-direction: column;
-          gap: 24px;
-          max-width: 1400px;
-          margin: 0 auto;
-          width: 100%;
-        }
-
-        .stats-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 20px;
-        }
-
-        .stat-card {
-          background: white;
-          border-radius: 12px;
-          padding: 20px;
-          border: 1px solid #e2e8f0;
-          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
-          display: flex;
-          flex-direction: column;
-        }
-
-        .stat-header {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin-bottom: 16px;
-          color: #475569;
+          padding: 8px 10px;
+          border-radius: var(--radius);
+          border: none;
+          background: transparent;
+          color: var(--text-secondary);
           font-size: 14px;
           font-weight: 500;
+          text-align: left;
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
-
-        .stat-icon {
-          width: 32px; height: 32px;
-          border-radius: 8px;
-          display: flex; align-items: center; justify-content: center;
+        .navitem:hover {
+          background: rgba(125, 125, 125, 0.1);
+          color: var(--text-main);
+          transform: translateX(4px);
         }
-
-        .stat-icon.green { background: #dcfce7; color: #16a34a; }
-        .stat-icon.red { background: #fee2e2; color: #ef4444; }
-        .stat-icon.orange { background: #ffedd5; color: #f97316; }
-        .stat-icon.blue { background: #dbeafe; color: #2563eb; }
-
-        .stat-val-row {
+        .navitem.active {
+          background: var(--bg-accent);
+          color: var(--text-accent);
+          font-weight: 600;
+        }
+        .navitem.active:hover {
+          transform: none;
+        }
+        .usermenu-item {
           display: flex;
-          align-items: baseline;
-          gap: 12px;
-        }
-        .stat-val {
-          font-size: 28px;
-          font-weight: 700;
-          color: #0f172a;
-        }
-        .stat-trend {
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
           font-size: 13px;
-          font-weight: 600;
+          font-weight: 500;
+          color: var(--text-secondary);
+          border-radius: var(--radius);
+          cursor: pointer;
+          transition: all 0.2s ease;
         }
-        .stat-trend.up { color: #16a34a; }
-        .stat-trend.down { color: #ef4444; }
-        .stat-sub { font-size: 12px; color: #94a3b8; margin-top: 4px; }
-
-        .charts-grid {
-          display: grid;
-          grid-template-columns: 2fr 1fr;
-          gap: 24px;
+        .usermenu-item:hover {
+          background: rgba(125, 125, 125, 0.1);
+          color: var(--text-main);
         }
-
-        .card {
-          background: white;
-          border-radius: 12px;
-          padding: 24px;
-          border: 1px solid #e2e8f0;
-          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
-        }
-
-        .card-title {
-          font-size: 16px;
-          font-weight: 600;
-          margin-bottom: 20px;
-          color: #0f172a;
-        }
-
-        /* SVG Line Chart */
-        .chart-svg { width: 100%; height: 220px; overflow: visible; }
-        .chart-line-blue { fill: none; stroke: #3b82f6; stroke-width: 3; }
-        .chart-line-red { fill: none; stroke: #ef4444; stroke-width: 3; }
-        .chart-area-blue { fill: url(#gradBlue); }
-        .chart-area-red { fill: url(#gradRed); }
-
-        .chart-legend { display: flex; gap: 16px; font-size: 12px; color: #64748b; margin-bottom: 20px; }
-        .legend-item { display: flex; align-items: center; gap: 6px; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; }
-
-        /* Donut Chart */
-        .donut-container { position: relative; width: 160px; height: 160px; margin: 0 auto; }
-        .donut-inner { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        .donut-val { font-size: 32px; font-weight: 700; color: #0f172a; line-height: 1; }
-        .donut-lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
-        .donut-legend { margin-top: 24px; display: flex; flex-direction: column; gap: 12px; }
-        .dl-item { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
-        .dl-left { display: flex; align-items: center; gap: 8px; color: #475569; }
-
-        .bottom-grid {
-          display: grid;
-          grid-template-columns: 2fr 1fr;
-          gap: 24px;
-        }
-
-        /* Alerts List */
-        .alerts-list { display: flex; flex-direction: column; gap: 16px; }
-        .alert-item { display: flex; align-items: center; justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid #f1f5f9; }
-        .alert-item:last-child { border: none; padding-bottom: 0; }
-        .alert-left { display: flex; align-items: center; gap: 16px; }
-        .alert-badge { padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; width: 70px; text-align: center; }
-        .alert-badge.high { background: #fee2e2; color: #ef4444; }
-        .alert-badge.critical { background: #fef2f2; color: #dc2626; border: 1px solid #f87171; }
-        .alert-badge.medium { background: #ffedd5; color: #f97316; }
-        .alert-text { font-size: 14px; font-weight: 500; color: #0f172a; }
-        .alert-sub { font-size: 13px; color: #64748b; }
         
-        .view-all { font-size: 13px; color: #2563eb; font-weight: 500; cursor: pointer; float: right; margin-top: -38px; }
+        /* Card Hover Animations */
+        .card-anim {
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .card-anim:hover {
+          transform: translateY(-2px);
+          box-shadow: var(--shadow-card);
+        }
 
+        .theme-toggle {
+          background: transparent;
+          border: none;
+          color: var(--text-secondary);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 6px;
+          border-radius: 50%;
+          transition: all 0.2s;
+        }
+        .theme-toggle:hover {
+          background: var(--surface-1);
+          color: var(--text-main);
+        }
       `}</style>
-
-      {/* Sidebar */}
-      <div className="sidebar">
-        <div className="sidebar-brand">
-          <Shield size={28} color="#38bdf8" />
-          <div className="sidebar-brand-text">
-            NIDS COMMAND
-            <span className="sidebar-brand-sub">Security Center v2.4</span>
+      
+      <div style={{ border: "0.5px solid var(--border)", borderRadius: "12px", overflow: "hidden", margin: "1rem", flex: 1, display: "flex", flexDirection: "column", background: "var(--bg-base)", transition: "background 0.3s ease" }}>
+        
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "0.5px solid var(--border)", background: "var(--surface-2)", backdropFilter: "blur(12px)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: "500", fontSize: "14px" }}>
+            <ShieldCheck size={18} color="var(--text-accent)" /> NIDS console
           </div>
-        </div>
-        <div className="nav-list">
-          <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}><LayoutDashboard size={18} /> Dashboard</div>
-          <div className={`nav-item ${activeTab === 'alerts' ? 'active' : ''}`} onClick={() => setActiveTab('alerts')}><Bell size={18} /> Alerts</div>
-          <div className={`nav-item ${activeTab === 'detections' ? 'active' : ''}`} onClick={() => setActiveTab('detections')}><AlertTriangle size={18} /> Detections</div>
-          <div className={`nav-item ${activeTab === 'network' ? 'active' : ''}`} onClick={() => setActiveTab('network')}><NetworkIcon size={18} /> Network</div>
-          <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}><FileText size={18} /> Reports</div>
-          <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}><SettingsIcon size={18} /> Settings</div>
-          <div className={`nav-item ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}><UsersIcon size={18} /> Users</div>
-          <div className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}><FileDigit size={18} /> Logs</div>
-        </div>
-        <div className="sidebar-footer">
-          <div className="sidebar-user">
-            <div className="sidebar-user-avatar">{user?.firstName?.[0] || 'A'}</div>
-            <div className="sidebar-user-info">
-              <span className="sidebar-user-name">{user ? `${user.firstName} ${user.lastName}` : 'Admin User'}</span>
-              <span className="sidebar-user-role">{user?.role || 'Administrator'}</span>
-            </div>
-          </div>
-          <div className="logout-btn-icon" onClick={onLogout} title="Logout">
-            <LogOut size={18} />
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="main-content">
-        <div className="topbar">
-          <div className="page-title">
-            <h1>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
-            <p>Overview of your network security</p>
-          </div>
-          <div className="top-actions">
-            <div className="date-picker">
-              May 16 - May 22, 2024 <ChevronDown size={14} />
+          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--text-success)" }}>
+              <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "var(--fill-success)", display: "inline-block" }}></span> Sniffer running
             </div>
 
-            <div className="user-profile">
-              <div className="avatar">{user?.firstName?.[0] || 'A'}</div>
-              <div className="user-info">
-                <span className="user-name">{user ? `${user.firstName} ${user.lastName}` : 'Admin User'}</span>
-                <span className="user-role">{user?.role || 'Administrator'}</span>
-              </div>
+            <button type="button" className="theme-toggle" onClick={toggleTheme}>
+              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
+
+            <div style={{ position: "relative" }}>
+              <button 
+                type="button" 
+                onClick={() => setMenuOpen(!menuOpen)}
+                style={{ display: "flex", alignItems: "center", gap: "8px", border: "none", background: "transparent", cursor: "pointer", padding: "4px 6px", borderRadius: "var(--radius)" }}
+              >
+                <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "var(--bg-accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: "500", color: "var(--text-accent)" }}>
+                  {user?.firstName?.[0] || 'A'}
+                </div>
+                <div style={{ textAlign: "left", color: "var(--text-main)" }}>
+                  <p style={{ fontSize: "13px", margin: 0, fontWeight: "500" }}>{user ? `${user.firstName} ${user.lastName}` : 'Admin User'}</p>
+                  <p style={{ fontSize: "11px", margin: 0, color: "var(--text-secondary)" }}>{user?.role || 'Administrator'}</p>
+                </div>
+                <ChevronDown size={14} color="var(--text-secondary)" />
+              </button>
+              
+              {menuOpen && (
+                <div style={{ position: "absolute", right: 0, top: "38px", width: "180px", background: "var(--surface-3)", border: "0.5px solid var(--border)", borderRadius: "var(--radius)", boxShadow: "var(--shadow-popover)", zIndex: 10, padding: "6px" }}>
+                  <div className="usermenu-item"><User size={15} />Profile</div>
+                  <div className="usermenu-item"><SettingsIcon size={15} />Preferences</div>
+                  <div style={{ height: "0.5px", background: "var(--border)", margin: "4px 6px" }}></div>
+                  <button type="button" onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", fontSize: "13px", color: "var(--text-danger)", borderRadius: "var(--radius)", width: "100%", border: "none", background: "transparent", textAlign: "left", cursor: "pointer" }}>
+                    <LogOut size={15} />Log out
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {activeTab === 'dashboard' && <Overview stats={stats} packets={livePackets} alerts={liveAlerts} />}
-        {activeTab === 'alerts' && <Alerts alerts={liveAlerts} />}
-        {activeTab === 'detections' && <Detections />}
-        {activeTab === 'network' && <Network />}
-        {activeTab === 'reports' && <Reports />}
-        {activeTab === 'settings' && <Settings />}
-        {activeTab === 'users' && <Users />}
-        {activeTab === 'logs' && <Logs />}
+        <div style={{ display: "flex", gap: 0, flex: 1 }}>
+          {/* Sidebar */}
+          <div style={{ width: "180px", background: "var(--surface-1)", borderRight: "0.5px solid var(--border)", padding: "1rem 0", flexShrink: 0 }}>
+            <p style={{ padding: "0 1rem", fontSize: "11px", color: "var(--text-muted)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.02em" }}>Monitor</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", padding: "0 8px", marginBottom: "16px" }}>
+              <button type="button" className={`navitem ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
+                <LayoutDashboard size={16} />Overview
+              </button>
+              <button type="button" className={`navitem ${activeTab === 'alerts' ? 'active' : ''}`} onClick={() => setActiveTab('alerts')}>
+                <Bell size={16} />Live alerts 
+                {activeAlertsCount > 0 && (
+                  <span style={{ marginLeft: "auto", background: "var(--bg-danger)", color: "var(--text-danger)", fontSize: "11px", padding: "1px 6px", borderRadius: "8px" }}>{activeAlertsCount}</span>
+                )}
+              </button>
+              <button type="button" className={`navitem ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+                <List size={16} />Traffic log
+              </button>
+            </div>
+            
+            <p style={{ padding: "0 1rem", fontSize: "11px", color: "var(--text-muted)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.02em" }}>System</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", padding: "0 8px" }}>
+              <button type="button" className={`navitem ${activeTab === 'model' ? 'active' : ''}`} onClick={() => setActiveTab('model')}>
+                <BarChart3 size={16} />Model performance
+              </button>
+              <button type="button" className={`navitem ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')}>
+                <SettingsIcon size={16} />Admin
+              </button>
+            </div>
+          </div>
+
+          {/* Main Content Area */}
+          <div style={{ flex: 1, padding: "1.25rem", minWidth: 0, overflowY: "auto", background: "var(--bg-base)" }}>
+            {activeTab === 'overview' && <Overview stats={stats} packets={livePackets} alerts={liveAlerts} modelInfo={modelInfo} />}
+            {activeTab === 'alerts' && <Alerts alerts={liveAlerts} />}
+            {activeTab === 'logs' && <Logs packets={livePackets} />}
+            {activeTab === 'model' && <Detections modelInfo={modelInfo} />}
+            {activeTab === 'admin' && <Settings modelInfo={modelInfo} />}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,213 +1,78 @@
 import React, { useState, useEffect } from "react";
-import { Shield, AlertTriangle, Ban, Activity } from "lucide-react";
-import { io } from "socket.io-client";
 
-// Real-time packet table logic driven by websockets
+export default function Overview({ stats, packets, alerts, modelInfo }) {
+  const time = new Date().toLocaleTimeString();
 
-export default function Overview({ stats, packets, alerts }) {
-  const recentAlerts = alerts.slice(0, 4);
+  const activeAlertsCount = alerts.length;
+  const totalAnalyzed = stats.totalAnalyzed || 0;
+  const accuracy = modelInfo?.accuracy || '...';
+  const monitoredHosts = stats.monitoredHosts || 0;
 
   return (
-    <div className="dash-container">
-      {/* Top Stats */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-header">
-            <div className="stat-icon green"><Shield size={18} /></div>
-            Total Alerts
-          </div>
-          <div className="stat-val-row">
-            <span className="stat-val">{stats.totalAnalyzed}</span>
-            <span className="stat-trend down">↓ 12%</span>
-          </div>
-          <div className="stat-sub">vs last 7 days</div>
+    <div style={{ animation: "fadeIn 0.3s ease" }}>
+      <p style={{ fontSize: "16px", fontWeight: "500", margin: "0 0 2px" }}>Overview</p>
+      <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: "0 0 16px" }}>Last updated {time}</p>
+      
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "12px", marginBottom: "16px" }}>
+        <div className="card-anim" style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: "1.25rem", border: "1px solid var(--border)" }}>
+          <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 8px", fontWeight: "500" }}>Overall accuracy</p>
+          <p style={{ fontSize: "28px", fontWeight: "600", margin: 0, letterSpacing: "-0.5px" }}>{accuracy}</p>
         </div>
-        <div className="stat-card">
-          <div className="stat-header">
-            <div className="stat-icon red"><AlertTriangle size={18} /></div>
-            Critical Alerts
-          </div>
-          <div className="stat-val-row">
-            <span className="stat-val">{stats.threatsFound}</span>
-            <span className="stat-trend down">↑ 75%</span>
-          </div>
-          <div className="stat-sub">vs last 7 days</div>
+        <div className="card-anim" style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: "1.25rem", border: "1px solid var(--border)" }}>
+          <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 8px", fontWeight: "500" }}>Active alerts</p>
+          <p style={{ fontSize: "28px", fontWeight: "600", margin: 0, letterSpacing: "-0.5px", color: activeAlertsCount > 0 ? "var(--text-danger)" : "var(--text-success)" }}>{activeAlertsCount}</p>
         </div>
-        <div className="stat-card">
-          <div className="stat-header">
-            <div className="stat-icon orange"><Ban size={18} /></div>
-            Blocked Attacks
-          </div>
-          <div className="stat-val-row">
-            <span className="stat-val">{stats.blocked}</span>
-            <span className="stat-trend up">↑ 20%</span>
-          </div>
-          <div className="stat-sub">vs last 7 days</div>
+        <div className="card-anim" style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: "1.25rem", border: "1px solid var(--border)" }}>
+          <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 8px", fontWeight: "500" }}>Total Analyzed</p>
+          <p style={{ fontSize: "28px", fontWeight: "600", margin: 0, letterSpacing: "-0.5px" }}>{totalAnalyzed}</p>
         </div>
-        <div className="stat-card">
-          <div className="stat-header">
-            <div className="stat-icon blue"><Activity size={18} /></div>
-            Monitored Hosts
-          </div>
-          <div className="stat-val-row">
-            <span className="stat-val">{stats.monitoredHosts}</span>
-            <span className="stat-trend up">↑ 5%</span>
-          </div>
-          <div className="stat-sub">vs last 7 days</div>
+        <div className="card-anim" style={{ background: "var(--surface-1)", borderRadius: "var(--radius)", padding: "1.25rem", border: "1px solid var(--border)" }}>
+          <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: "0 0 8px", fontWeight: "500" }}>Monitored Hosts</p>
+          <p style={{ fontSize: "28px", fontWeight: "600", margin: 0, letterSpacing: "-0.5px", color: "var(--text-accent)" }}>{monitoredHosts}</p>
         </div>
       </div>
 
-      {/* Charts Row */}
-      <div className="charts-grid">
-        <div className="card">
-          <div className="card-title">Intrusion Detections Over Time</div>
-          <div className="chart-legend">
-            <div className="legend-item"><div className="dot" style={{background: '#3b82f6'}}></div> Detected</div>
-            <div className="legend-item"><div className="dot" style={{background: '#ef4444'}}></div> Blocked</div>
-          </div>
-          
-          <svg className="chart-svg" viewBox="0 0 800 200" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="gradBlue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.2"/>
-                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
-              </linearGradient>
-              <linearGradient id="gradRed" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#ef4444" stopOpacity="0.15"/>
-                <stop offset="100%" stopColor="#ef4444" stopOpacity="0"/>
-              </linearGradient>
-            </defs>
-            
-            {[0, 50, 100, 150, 200].map(y => (
-              <g key={y}>
-                <line x1="40" y1={y} x2="800" y2={y} stroke="#f1f5f9" strokeWidth="1" />
-                <text x="30" y={y + 4} fontSize="11" fill="#94a3b8" textAnchor="end">{100 - (y/2)}</text>
-              </g>
-            ))}
-            
-            <path d="M 40 120 L 140 140 L 240 100 L 340 150 L 440 110 L 540 140 L 640 110 L 740 150 L 800 130" className="chart-line-blue" />
-            <path d="M 40 120 L 140 140 L 240 100 L 340 150 L 440 110 L 540 140 L 640 110 L 740 150 L 800 130 L 800 200 L 40 200 Z" className="chart-area-blue" />
-            
-            <path d="M 40 160 L 140 170 L 240 150 L 340 180 L 440 160 L 540 170 L 640 140 L 740 170 L 800 150" className="chart-line-red" />
-            <path d="M 40 160 L 140 170 L 240 150 L 340 180 L 440 160 L 540 170 L 640 140 L 740 170 L 800 150 L 800 200 L 40 200 Z" className="chart-area-red" />
-            
-            {['May 16', 'May 17', 'May 18', 'May 19', 'May 20', 'May 21', 'May 22'].map((lbl, i) => (
-              <text key={i} x={40 + i * (760/6)} y="220" fontSize="11" fill="#94a3b8" textAnchor="middle">{lbl}</text>
-            ))}
-          </svg>
+      <div className="card-anim" style={{ background: "var(--surface-1)", borderRadius: "12px", border: "1px solid var(--border)", overflow: "hidden" }}>
+        <div style={{ padding: "1.25rem 1.25rem 0.5rem" }}>
+          <p style={{ fontSize: "14px", fontWeight: "500", margin: "0 0 4px" }}>Recent Traffic Log</p>
+          <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: 0 }}>Latest bidirectional flows</p>
         </div>
-        
-        <div className="card">
-          <div className="card-title">Threat Types</div>
-          <div className="donut-container">
-            <svg viewBox="0 0 36 36" style={{width: '100%', height: '100%', transform: 'rotate(-90deg)'}}>
-              <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#3b82f6" strokeWidth="6" strokeDasharray="40 60" />
-              <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#ef4444" strokeWidth="6" strokeDasharray="25 75" strokeDashoffset="-40" />
-              <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#f97316" strokeWidth="6" strokeDasharray="15 85" strokeDashoffset="-65" />
-              <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#eab308" strokeWidth="6" strokeDasharray="10 90" strokeDashoffset="-80" />
-              <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#8b5cf6" strokeWidth="6" strokeDasharray="10 90" strokeDashoffset="-90" />
-            </svg>
-            <div className="donut-inner">
-              <span className="donut-val">{stats.threatsFound}</span>
-              <span className="donut-lbl">Total</span>
-            </div>
-          </div>
-          <div className="donut-legend">
-            <div className="dl-item"><div className="dl-left"><div className="dot" style={{background:'#3b82f6'}}></div> DoS</div> <span>40%</span></div>
-            <div className="dl-item"><div className="dl-left"><div className="dot" style={{background:'#ef4444'}}></div> Port Scan</div> <span>25%</span></div>
-            <div className="dl-item"><div className="dl-left"><div className="dot" style={{background:'#f97316'}}></div> Brute Force</div> <span>15%</span></div>
-            <div className="dl-item"><div className="dl-left"><div className="dot" style={{background:'#eab308'}}></div> Web Attacks</div> <span>10%</span></div>
-            <div className="dl-item"><div className="dl-left"><div className="dot" style={{background:'#8b5cf6'}}></div> Others</div> <span>10%</span></div>
-          </div>
-        </div>
-      </div>
+        <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse", tableLayout: "fixed" }}>
+          <thead>
+            <tr style={{ color: "var(--text-secondary)", textAlign: "left", borderBottom: "1px solid var(--border)" }}>
+              <th style={{ padding: "10px 16px", fontWeight: "500" }}>Source IP</th>
+              <th style={{ padding: "10px 16px", fontWeight: "500" }}>Dest IP</th>
+              <th style={{ padding: "10px 16px", fontWeight: "500" }}>Port/Size</th>
+              <th style={{ padding: "10px 16px", fontWeight: "500" }}>Protocol</th>
+              <th style={{ padding: "10px 16px", fontWeight: "500" }}>Class</th>
+              <th style={{ padding: "10px 16px", fontWeight: "500" }}>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {packets.slice(0, 5).map((pkt, i) => {
+              let color = 'var(--text-secondary)';
+              const v = (pkt.verdict || pkt.type || '').toLowerCase();
+              if (v.includes('dos') || v.includes('brute') || v.includes('botnet') || v.includes('infiltration')) color = 'var(--text-danger)';
+              else if (v.includes('scan')) color = 'var(--text-warning)';
 
-      {/* Bottom Row */}
-      <div className="bottom-grid">
-        <div className="card">
-          <div className="card-title">Recent Alerts</div>
-          <div className="view-all">View All</div>
-          <div className="alerts-list">
-            {recentAlerts.map((alert, i) => (
-              <div className="alert-item" key={i}>
-                <div className="alert-left">
-                  <div className={`alert-badge ${(alert.severity || 'High').toLowerCase()}`}>{alert.severity || 'High'}</div>
-                  <div className="alert-text">{alert.type || 'Alert'} from <span style={{color: '#64748b'}}>{alert.srcIp}</span></div>
-                </div>
-                <div className="alert-sub">{alert.time}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-title">Network Status</div>
-          <div style={{display: 'flex', alignItems: 'center', gap: '30px', marginTop: '20px'}}>
-            <div className="donut-container" style={{width: '120px', height: '120px'}}>
-              <svg viewBox="0 0 36 36" style={{width: '100%', height: '100%', transform: 'rotate(-90deg)'}}>
-                <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#22c55e" strokeWidth="6" strokeDasharray="85 15" />
-                <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#ef4444" strokeWidth="6" strokeDasharray="15 85" strokeDashoffset="-85" />
-              </svg>
-              <div className="donut-inner">
-                <span className="donut-val" style={{fontSize: '24px'}}>85%</span>
-                <span className="donut-lbl" style={{fontSize: '10px'}}>Secure</span>
-              </div>
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: '16px', flex: 1}}>
-              <div className="dl-item"><div className="dl-left"><div className="dot" style={{background:'#22c55e'}}></div> <span style={{fontSize: '12px'}}>24 Hosts Online</span></div></div>
-              <div className="dl-item"><div className="dl-left"><div className="dot" style={{background:'#eab308'}}></div> <span style={{fontSize: '12px'}}>3 Suspicious</span></div></div>
-              <div className="dl-item"><div className="dl-left"><div className="dot" style={{background:'#ef4444'}}></div> <span style={{fontSize: '12px'}}>1 Blocked</span></div></div>
-              <div className="view-all" style={{float:'left', marginTop:'4px'}}>View Details</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Live Packets Table */}
-      <div className="card" style={{ marginTop: '24px' }}>
-        <div className="card-title">Live Network Traffic</div>
-        <div style={{ overflowX: 'auto', marginTop: '16px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
-                <th style={{ padding: '12px 8px' }}>Time</th>
-                <th style={{ padding: '12px 8px' }}>Source IP</th>
-                <th style={{ padding: '12px 8px' }}>Dest IP</th>
-                <th style={{ padding: '12px 8px' }}>Protocol</th>
-                <th style={{ padding: '12px 8px' }}>Length</th>
-                <th style={{ padding: '12px 8px' }}>Verdict</th>
+              return (
+                <tr key={i} style={{ borderBottom: "1px solid var(--border)", transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(15, 23, 42, 0.02)"} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}>
+                  <td style={{ padding: "12px 16px", fontWeight: "500" }}>{pkt.src}</td>
+                  <td style={{ padding: "12px 16px", fontWeight: "500" }}>{pkt.dst}</td>
+                  <td style={{ padding: "12px 16px", color: "var(--text-secondary)" }}>{pkt.size}</td>
+                  <td style={{ padding: "12px 16px", color: "var(--text-secondary)" }}>{pkt.proto}</td>
+                  <td style={{ padding: "12px 16px", fontWeight: "500", color: color }}>{pkt.verdict || pkt.type}</td>
+                  <td style={{ padding: "12px 16px", color: "var(--text-secondary)" }}>{pkt.time instanceof Date ? pkt.time.toLocaleTimeString() : 'Just now'}</td>
+                </tr>
+              )
+            })}
+            {packets.length === 0 && (
+              <tr>
+                <td colSpan="6" style={{ padding: "24px 16px", color: "var(--text-secondary)", textAlign: "center" }}>Waiting for traffic...</td>
               </tr>
-            </thead>
-            <tbody>
-              {packets.slice(0, 15).map((pkt, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '12px 8px', color: '#64748b' }}>{pkt.time instanceof Date && !isNaN(pkt.time.getTime()) ? pkt.time.toLocaleTimeString() : 'Just now'}</td>
-                  <td style={{ padding: '12px 8px', fontWeight: 500 }}>{pkt.src}</td>
-                  <td style={{ padding: '12px 8px', fontWeight: 500 }}>{pkt.dst}</td>
-                  <td style={{ padding: '12px 8px' }}>{pkt.proto}</td>
-                  <td style={{ padding: '12px 8px' }}>{pkt.size}</td>
-                  <td style={{ padding: '12px 8px' }}>
-                    <span style={{ 
-                      padding: '4px 8px', 
-                      borderRadius: '4px', 
-                      backgroundColor: (pkt.verdict === 'Normal' || pkt.type === 'Normal') ? '#dcfce7' : '#fee2e2',
-                      color: (pkt.verdict === 'Normal' || pkt.type === 'Normal') ? '#16a34a' : '#ef4444',
-                      fontWeight: 500,
-                      fontSize: '11px'
-                    }}>
-                      {pkt.verdict || pkt.type}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {packets.length === 0 && (
-                <tr>
-                  <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>Waiting for live network traffic...</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
