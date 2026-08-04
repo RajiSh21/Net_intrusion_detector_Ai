@@ -385,6 +385,9 @@ def reset_password():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+import os
+
 if __name__ == '__main__':
-    print("Starting NIDS API Server on http://0.0.0.0:5000")
-    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"Starting NIDS API Server on http://0.0.0.0:{port}")
+    socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
