@@ -8,3 +8,4 @@ scapy
 flask
 streamlit
 flask-socketio
+flask-cors
