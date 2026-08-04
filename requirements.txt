@@ -7,3 +7,4 @@ joblib
 scapy
 flask
 streamlit
+flask-socketio
