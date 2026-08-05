@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Shield, Eye, EyeOff, Moon, Sun, ArrowLeft } from 'lucide-react';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
 export default function Login({ onLogin, theme, toggleTheme }) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -60,7 +62,7 @@ export default function Login({ onLogin, theme, toggleTheme }) {
 
     if ((isRegistering || isResetting) && !isVerifyingCode) {
       try {
-        const response = await fetch('http://localhost:5000/api/send-code', {
+        const response = await fetch(`${BACKEND_URL}/api/send-code`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -83,14 +85,14 @@ export default function Login({ onLogin, theme, toggleTheme }) {
       return;
     }
 
-    let endpoint = 'http://localhost:5000/api/login';
+    let endpoint = `${BACKEND_URL}/api/login`;
     let payload = { username, password };
 
     if (isRegistering) {
-      endpoint = 'http://localhost:5000/api/register';
+      endpoint = `${BACKEND_URL}/api/register`;
       payload = { username, password, firstName, lastName, email, contact, code: verificationCode };
     } else if (isResetting) {
-      endpoint = 'http://localhost:5000/api/reset-password';
+      endpoint = `${BACKEND_URL}/api/reset-password`;
       payload = { email, newPassword: password, code: verificationCode };
     }
     

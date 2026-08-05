@@ -8,6 +8,8 @@ import Settings from "../pages/Settings"; // Mapped to Admin
 
 import { io } from "socket.io-client";
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
 export default function Home({ user, onLogout, theme, toggleTheme }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [livePackets, setLivePackets] = useState([]);
@@ -23,7 +25,7 @@ export default function Home({ user, onLogout, theme, toggleTheme }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/stats')
+    fetch(`${BACKEND_URL}/api/stats`)
       .then(res => res.json())
       .then(data => {
         if (data.threatsFound) {
@@ -33,7 +35,7 @@ export default function Home({ user, onLogout, theme, toggleTheme }) {
       })
       .catch(err => console.error(err));
 
-    const socket = io("http://localhost:5000");
+    const socket = io(BACKEND_URL);
     const hostsSet = new Set();
     
     socket.on("packet_update", (data) => {
@@ -100,7 +102,7 @@ export default function Home({ user, onLogout, theme, toggleTheme }) {
       }
     });
 
-    fetch('http://localhost:5000/api/model_info')
+    fetch(`${BACKEND_URL}/api/model_info`)
       .then(res => res.json())
       .then(data => setModelInfo(data))
       .catch(err => console.error(err));
