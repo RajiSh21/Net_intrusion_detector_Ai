@@ -10,7 +10,7 @@ __pycache__/
 
 # Model binaries (too large, generated artifacts)
 *.pkl
-*.json
+models/*.json
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
