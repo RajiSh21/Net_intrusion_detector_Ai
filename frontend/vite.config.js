@@ -13,7 +13,7 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: '../static',
+    outDir: process.env.NETLIFY ? 'dist' : '../static',
     emptyOutDir: true
   }
 })
