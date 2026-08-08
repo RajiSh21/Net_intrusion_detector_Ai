@@ -88,7 +88,7 @@ def main():
     from sniffer import NIDSClassifier, AlertLogger, LiveSniffer
 
     # Set up alert logging
-    db_path = os.path.join(PROJECT_ROOT, 'logs', 'alerts.db')
+    db_path = os.path.join(PROJECT_ROOT, 'nids.db')
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     csv_output = args.output or os.path.join(PROJECT_ROOT, 'logs', 'alerts.csv')
 

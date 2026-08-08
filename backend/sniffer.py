@@ -23,6 +23,7 @@ import json
 import argparse
 import logging
 import threading
+import queue
 import csv
 import sqlite3
 import socketio
@@ -75,7 +76,7 @@ logger = logging.getLogger("NIDS-Sniffer")
 
 # --- Constants ---
 BENIGN_LABEL = "Normal"
-ALERT_DB_PATH = "alerts.db"
+ALERT_DB_PATH = "nids.db"
 DEFAULT_INTERFACE = None  # None = auto-detect
 DEFAULT_SNAPLEN = 65535
 DEFAULT_TIMEOUT = 300  # seconds
@@ -250,6 +251,78 @@ class FeaturePreprocessor:
 
         return scaled
 
+    def transform_batch(self, features_list: List[FlowFeatures]) -> np.ndarray:
+        """
+        Apply the full preprocessing pipeline for a batch of flows.
+        Returns a 2D array of shape (n_samples, n_features).
+        """
+        if not features_list:
+            return np.empty((0, len(self.feature_names) + 2)) # +2 for port binning replacing 1
+
+        all_final_values = []
+        for features in features_list:
+            raw_list = features.to_list()
+            feature_dict = dict(zip(self.feature_names, raw_list))
+
+            dst_port = feature_dict.get('Destination Port', 0.0)
+            feature_dict['PORT_WELL_KNOWN'] = 1.0 if dst_port < 1024 else 0.0
+            feature_dict['PORT_REGISTERED'] = 1.0 if 1024 <= dst_port < 49152 else 0.0
+            feature_dict['PORT_DYNAMIC'] = 1.0 if dst_port >= 49152 else 0.0
+
+            for feat_name in self.skewed_features:
+                if feat_name in feature_dict:
+                    val = feature_dict[feat_name]
+                    feature_dict[feat_name] = np.log1p(max(float(val), 0.0))
+
+            if 'Protocol' in feature_dict:
+                feature_dict['Protocol'] = float(feature_dict['Protocol'])
+
+            final_feature_names = [
+                'Protocol', 'Flow Duration',
+                'Total Fwd Packets', 'Total Backward Packets',
+                'Total Length of Fwd Packets', 'Total Length of Bwd Packets',
+                'Fwd Packet Length Max', 'Fwd Packet Length Min',
+                'Fwd Packet Length Mean', 'Fwd Packet Length Std',
+                'Bwd Packet Length Max', 'Bwd Packet Length Min',
+                'Bwd Packet Length Mean', 'Bwd Packet Length Std',
+                'Flow Bytess', 'Flow Packetss',
+                'Flow IAT Mean', 'Flow IAT Std', 'Flow IAT Max', 'Flow IAT Min',
+                'Fwd IAT Total', 'Fwd IAT Mean', 'Fwd IAT Std', 'Fwd IAT Max', 'Fwd IAT Min',
+                'Bwd IAT Total', 'Bwd IAT Mean', 'Bwd IAT Std', 'Bwd IAT Max', 'Bwd IAT Min',
+                'Fwd PSH Flags', 'Bwd PSH Flags', 'Fwd URG Flags', 'Bwd URG Flags',
+                'Fwd Header Length', 'Bwd Header Length',
+                'Fwd Packetss', 'Bwd Packetss',
+                'Min Packet Length', 'Max Packet Length',
+                'Packet Length Mean', 'Packet Length Std', 'Packet Length Variance',
+                'FIN Flag Count', 'SYN Flag Count', 'RST Flag Count',
+                'PSH Flag Count', 'ACK Flag Count', 'URG Flag Count',
+                'CWE Flag Count', 'ECE Flag Count',
+                'Down Up Ratio', 'Average Packet Size',
+                'Avg Fwd Segment Size', 'Avg Bwd Segment Size',
+                'Fwd Avg Bytes Bulk', 'Fwd Avg Packets Bulk', 'Fwd Avg Bulk Rate',
+                'Bwd Avg Bytes Bulk', 'Bwd Avg Packets Bulk', 'Bwd Avg Bulk Rate',
+                'Subflow Fwd Packets', 'Subflow Fwd Bytes',
+                'Subflow Bwd Packets', 'Subflow Bwd Bytes',
+                'Init_Win_bytes_forward', 'Init_Win_bytes_backward',
+                'act_data_pkt_fwd', 'min_seg_size_forward',
+                'Active Mean', 'Active Std', 'Active Max', 'Active Min',
+                'Idle Mean', 'Idle Std', 'Idle Max', 'Idle Min',
+                'PORT_WELL_KNOWN', 'PORT_REGISTERED', 'PORT_DYNAMIC',
+            ]
+            final_values = [float(feature_dict.get(name, 0.0)) for name in final_feature_names]
+            all_final_values.append(final_values)
+
+        arr_2d = np.array(all_final_values, dtype=np.float64)
+        
+        # Clean Inf/NaN
+        arr_2d = np.where(np.isinf(arr_2d), np.nan, arr_2d)
+        if np.any(np.isnan(arr_2d)):
+            logger.debug("Batch contained NaN/infinite values. Imputing with 0.0.")
+            arr_2d = np.nan_to_num(arr_2d, nan=0.0, posinf=0.0, neginf=0.0)
+
+        scaled = self.scaler.transform(arr_2d)
+        return scaled
+
 
 # ============================================================
 #  ALERT LOGGING & DATABASE
@@ -260,22 +333,27 @@ class AlertLogger:
     def __init__(self, db_path: Optional[str] = None, csv_path: Optional[str] = None,
                  save_to_db: bool = True):
         if db_path is None:
-            self.db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'alerts.db')
+            self.db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'nids.db')
         else:
             self.db_path = db_path
         
         self.csv_path = csv_path
         self.save_to_db = save_to_db
         
-        self.sio = socketio.Client()
+        self.sio = socketio.Client(reconnection=True, reconnection_attempts=0, reconnection_delay=1, reconnection_delay_max=5)
         try:
             self.sio.connect('http://localhost:5000')
             logger.info("Connected to local Socket.IO API server.")
         except Exception as e:
-            logger.warning(f"Could not connect to Socket.IO API server: {e}")
+            logger.warning(f"Could not connect to Socket.IO API server: {e}. Will retry in background.")
 
         self._init_db()
         self._init_csv()
+
+        self.alert_queue = queue.Queue()
+        self.running = True
+        self.db_thread = threading.Thread(target=self._db_worker, daemon=True)
+        self.db_thread.start()
 
     def _init_db(self):
         if not self.save_to_db:
@@ -284,29 +362,31 @@ class AlertLogger:
             # Ensure the directory exists
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self.conn.execute("PRAGMA foreign_keys = ON;")
             cursor = self.conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS ADMINISTRATOR (
-                    admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT,
-                    password_hash TEXT
-                )
-            ''')
+            # Removed ADMINISTRATOR since we use USER
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS DATASET (
                     dataset_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    admin_id INTEGER,
-                    dataset_name TEXT,
-                    file_path TEXT,
-                    upload_date TEXT,
-                    FOREIGN KEY(admin_id) REFERENCES ADMINISTRATOR(admin_id)
+                    dataset_name TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    source_url TEXT,
+                    upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    user_id INTEGER,
+                    FOREIGN KEY (user_id) REFERENCES USER (user_id)
+                        ON DELETE SET NULL
+                        ON UPDATE CASCADE
                 )
             ''')
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS USER (
                     user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    full_name TEXT,
-                    security_role TEXT
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    first_name TEXT,
+                    last_name TEXT,
+                    email TEXT,
+                    role TEXT
                 )
             ''')
             cursor.execute('''
@@ -317,17 +397,23 @@ class AlertLogger:
                     port INTEGER,
                     protocol TEXT,
                     classification TEXT,
-                    timestamp TEXT
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS ALERT (
                     alert_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    log_id INTEGER,
+                    log_id INTEGER NOT NULL,
+                    user_id INTEGER,
                     severity_level TEXT,
-                    resolution_status TEXT,
-                    generated_at TEXT,
-                    FOREIGN KEY(log_id) REFERENCES TRAFFIC_LOG(log_id)
+                    resolution_status TEXT DEFAULT 'Open',
+                    generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (log_id) REFERENCES TRAFFIC_LOG (log_id)
+                        ON DELETE CASCADE
+                        ON UPDATE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES USER (user_id)
+                        ON DELETE SET NULL
+                        ON UPDATE CASCADE
                 )
             ''')
             self.conn.commit()
@@ -349,7 +435,7 @@ class AlertLogger:
                     ])
 
     def log_alert(self, prediction: str, confidence: float, flow_info: Dict,
-                  features: FlowFeatures, packets: List[PacketInfo]):
+                  features: FlowFeatures, num_packets: int):
         """Record an intrusion alert (and emit all packets to live UI)."""
         timestamp = datetime.now(timezone.utc).isoformat()
         src_ip = flow_info.get('src_ip', '')
@@ -357,9 +443,18 @@ class AlertLogger:
         src_port = flow_info.get('src_port', 0)
         dst_port = flow_info.get('dst_port', 0)
         protocol = flow_info.get('protocol', 0)
-        num_packets = len(packets)
         flow_duration = features.Flow_Duration
         total_bytes = int(features.Flow_Bytess)
+        
+        is_intrusion = prediction != BENIGN_LABEL
+        sev = "Low"
+        if is_intrusion:
+            if prediction in ['Dos/DDos', 'Infiltration', 'Botnet ARES']:
+                sev = 'Critical'
+            elif prediction in ['Web Attack', 'Brute Force']:
+                sev = 'High'
+            elif prediction == 'PortScan':
+                sev = 'Medium'
         
         packet_data = {
             "timestamp": timestamp,
@@ -371,54 +466,107 @@ class AlertLogger:
             "verdict": prediction,
             "confidence": confidence,
             "length": total_bytes,
-            "latencyMs": (flow_duration / 1000.0) # approx inference/latency representation
+            "latencyMs": (flow_duration / 1000.0), # approx inference/latency representation
+            "sev": sev,
+            "type": prediction
         }
         
-        # Emit to WebSocket
-        if self.sio.connected:
-            self.sio.emit('new_packet', packet_data)
+        self.alert_queue.put({
+            "prediction": prediction,
+            "confidence": confidence,
+            "timestamp": timestamp,
+            "src_ip": src_ip,
+            "dst_ip": dst_ip,
+            "dst_port": dst_port,
+            "src_port": src_port,
+            "protocol": protocol,
+            "num_packets": num_packets,
+            "flow_duration": flow_duration,
+            "total_bytes": total_bytes,
+            "packet_data": packet_data,
+        })
 
-        # Always save traffic to TRAFFIC_LOG
+    def _db_worker(self):
+        batch = []
+        last_commit = time.time()
+        while self.running or not self.alert_queue.empty():
+            try:
+                item = self.alert_queue.get(timeout=0.5)
+                if item is None:
+                    continue
+                batch.append(item)
+            except queue.Empty:
+                pass
+
+            now = time.time()
+            if len(batch) >= 100 or (batch and now - last_commit > 1.0) or (not self.running and batch):
+                self._flush_batch(batch)
+                batch = []
+                last_commit = time.time()
+
+    def _flush_batch(self, batch):
+        if not batch: return
+        
+        if not self.sio.connected:
+            try:
+                self.sio.connect('http://localhost:5000')
+            except Exception:
+                pass
+
+        if self.sio.connected:
+            for item in batch:
+                try:
+                    self.sio.emit('new_packet', item['packet_data'])
+                except Exception:
+                    pass
+
+        if self.csv_path:
+            try:
+                with open(self.csv_path, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    for item in batch:
+                        writer.writerow([
+                            item['timestamp'], item['src_ip'], item['dst_ip'], item['src_port'], item['dst_port'],
+                            item['protocol'], item['prediction'], item['confidence'], item['num_packets'],
+                            item['flow_duration'], item['total_bytes']
+                        ])
+            except Exception as e:
+                import logging
+                logging.error(f"Failed CSV write: {e}")
+
         if self.save_to_db:
             try:
+                self.conn.execute("BEGIN TRANSACTION")
                 cursor = self.conn.cursor()
-                cursor.execute('''
-                    INSERT INTO TRAFFIC_LOG (
-                        source_ip, destination_ip, port, protocol, classification, timestamp
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                ''', (
-                    src_ip, dst_ip, dst_port, str(protocol), prediction, timestamp
-                ))
-                
-                log_id = cursor.lastrowid
-                
-                # Only save intrusions to ALERT table
-                if prediction != BENIGN_LABEL:
-                    severity = "High" if confidence > 0.9 else "Medium"
+                for item in batch:
                     cursor.execute('''
-                        INSERT INTO ALERT (
-                            log_id, severity_level, resolution_status, generated_at
-                        ) VALUES (?, ?, ?, ?)
+                        INSERT INTO TRAFFIC_LOG (
+                            source_ip, destination_ip, port, protocol, classification, timestamp
+                        ) VALUES (?, ?, ?, ?, ?, ?)
                     ''', (
-                        log_id, severity, "Pending", timestamp
+                        item['src_ip'], item['dst_ip'], item['dst_port'], str(item['protocol']), item['prediction'], item['timestamp']
                     ))
-                
+                    log_id = cursor.lastrowid
+                    if item['prediction'] != BENIGN_LABEL:
+                        severity = "High" if item['confidence'] > 0.9 else "Medium"
+                        cursor.execute('''
+                            INSERT INTO ALERT (
+                                log_id, severity_level, resolution_status, generated_at
+                            ) VALUES (?, ?, ?, ?)
+                        ''', (
+                            log_id, severity, "Open", item['timestamp']
+                        ))
                 self.conn.commit()
             except Exception as e:
-                logger.error(f"Failed to log to SQLite database: {e}")
+                self.conn.rollback()
+                import logging
+                logging.error(f"Failed SQLite write: {e}")
 
-            # CSV
-            if self.csv_path:
-                try:
-                    with open(self.csv_path, 'a', newline='') as f:
-                        writer = csv.writer(f)
-                        writer.writerow([
-                            timestamp, src_ip, dst_ip, src_port, dst_port,
-                            protocol, prediction, confidence, num_packets,
-                            flow_duration, total_bytes
-                        ])
-                except Exception as e:
-                    logger.error(f"Failed to log alert to CSV: {e}")
+    def stop(self):
+        self.running = False
+        self.alert_queue.put(None)
+        if hasattr(self, 'db_thread') and self.db_thread.is_alive():
+            self.db_thread.join(timeout=5.0)
 
 
 # ============================================================
@@ -462,7 +610,42 @@ class NIDSClassifier:
         predicted_idx = int(np.argmax(probas))
         predicted_label = self.class_names[predicted_idx]
         confidence = float(probas[predicted_idx])
+        
+        # Apply strict confidence threshold to prevent false positives on loopback/internet traffic
+        if predicted_label != BENIGN_LABEL and confidence < 0.95:
+            predicted_label = BENIGN_LABEL
+            
         return predicted_label, confidence, probas
+
+    def classify_batch(self, features_list: List[FlowFeatures]) -> Tuple[List[str], List[float], np.ndarray]:
+        """
+        Classify a batch of flows.
+        
+        Returns:
+            Tuple of (predicted_labels, confidences, probability_array)
+        """
+        if not features_list:
+            return [], [], np.array([])
+            
+        X_scaled = self.preprocessor.transform_batch(features_list)
+        probas_batch = self.model.predict_proba(X_scaled)
+        
+        predicted_indices = np.argmax(probas_batch, axis=1)
+        predicted_labels = []
+        confidences = []
+        
+        for i, idx in enumerate(predicted_indices):
+            label = self.class_names[idx]
+            conf = float(probas_batch[i][idx])
+            
+            # Apply strict confidence threshold
+            if label != BENIGN_LABEL and conf < 0.95:
+                label = BENIGN_LABEL
+                
+            predicted_labels.append(label)
+            confidences.append(conf)
+        
+        return predicted_labels, confidences, probas_batch
 
     def is_intrusion(self, label: str) -> bool:
         """Check if a predicted label represents an intrusion."""
@@ -504,14 +687,7 @@ class LiveSniffer:
             'recent_alerts': deque(maxlen=20),
         }
 
-        # Socket.IO Client for Real-time Dashboard
-        self.sio = socketio.Client()
-        try:
-            self.sio.connect('http://localhost:5000')
-            logger.info("Connected to WebSocket API Server for live updates.")
-        except Exception as e:
-            logger.warning(f"Could not connect to WebSocket API Server: {e}")
-            self.sio = None
+        # Removed Socket.IO from LiveSniffer; it's handled completely by AlertLogger
 
     def _scapy_callback(self, pkt):
         """Callback for each captured packet (runs in Scapy thread).
@@ -582,19 +758,37 @@ class LiveSniffer:
     def _process_ready_flows(self):
         """Process flows that are ready for classification."""
         ready_flows = self.flow_collector.get_ready_flows()
+        if not ready_flows:
+            return
 
-        for flow_key, packets in ready_flows.items():
+        flow_keys = []
+        features_list = []
+        for flow_key, features in ready_flows.items():
             if self.max_flows > 0 and self.flow_count >= self.max_flows:
                 break
+            flow_keys.append(flow_key)
+            features_list.append(features)
 
-            try:
-                t0 = time.perf_counter()
-                features = self.flow_collector.extract_features(packets)
-                label, confidence, probas = self.classifier.classify(features)
-                elapsed = (time.perf_counter() - t0) * 1000
-                self.stats['classification_time_ms'].append(elapsed)
+        if not features_list:
+            return
+
+        try:
+            t0 = time.perf_counter()
+            labels, confidences, probas_batch = self.classifier.classify_batch(features_list)
+            elapsed = (time.perf_counter() - t0) * 1000
+            self.stats['classification_time_ms'].append(elapsed)
+
+            for i, flow_key in enumerate(flow_keys):
+                label = labels[i]
+                confidence = confidences[i]
+                features = features_list[i]
+                
+                # Apply confidence threshold
+                if confidence < 0.50:
+                    label = BENIGN_LABEL
 
                 src_ip, src_port, dst_ip, dst_port, proto = flow_key
+                
                 flow_info = {
                     'src_ip': src_ip, 'dst_ip': dst_ip,
                     'src_port': src_port, 'dst_port': dst_port,
@@ -605,26 +799,7 @@ class LiveSniffer:
                 self.flow_count += 1
                 self.stats['total_flows'] += 1
 
-                # Emit over websocket for the React dashboard
-                if self.sio and self.sio.connected:
-                    try:
-                        self.sio.emit('new_packet', {
-                            "id": str(time.time()),
-                            "timestamp": datetime.now().isoformat(),
-                            "src": src_ip,
-                            "dst": dst_ip,
-                            "sport": src_port,
-                            "dport": dst_port,
-                            "proto": "TCP" if proto==6 else ("UDP" if proto==17 else "ICMP"),
-                            "verdict": label,
-                            "confidence": confidence,
-                            "length": len(packets),
-                            "latencyMs": elapsed,
-                            "sev": "High" if is_intrusion else "Low",
-                            "type": label
-                        })
-                    except Exception:
-                        pass
+                # Socket emission was moved to alert_logger._flush_batch()
 
                 # Always log the alert so it emits to the WebSocket UI
                 self.alert_logger.log_alert(
@@ -632,7 +807,7 @@ class LiveSniffer:
                     confidence=confidence,
                     flow_info=flow_info,
                     features=features,
-                    packets=packets,
+                    num_packets=int(features.Flow_Packetss),
                 )
 
                 if is_intrusion:
@@ -642,7 +817,7 @@ class LiveSniffer:
                         f"[!] INTRUSION DETECTED: {label} "
                         f"({confidence*100:.1f}% conf) | "
                         f"{src_ip}:{src_port} → {dst_ip}:{dst_port} "
-                        f"proto={proto} | {len(packets)} pkts | "
+                        f"proto={proto} | {int(features.Flow_Packetss)} pkts | "
                         f"duration={features.Flow_Duration:.0f}µs"
                     )
                     logger.warning(alert_msg)
@@ -656,8 +831,8 @@ class LiveSniffer:
                             f"| {label} ({confidence*100:.0f}%)"
                         )
 
-            except Exception as e:
-                logger.error(f"Error classifying flow: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Error classifying batch of flows: {e}", exc_info=True)
 
     def _monitor_loop(self):
         """Background thread that periodically checks for ready flows."""
@@ -774,6 +949,7 @@ class LiveSniffer:
             time.sleep(2)
             with self.lock:
                 self._process_ready_flows()
+            self.alert_logger.stop()
             self.print_stats()
 
     def _process_pcap(self, pcap_path: str):
@@ -811,14 +987,19 @@ class LiveSniffer:
                 remaining = dict(self.flow_collector.flows)
                 self.flow_collector.flows.clear()
 
-            for flow_key, flow_packets in remaining.items():
-                if len(flow_packets) >= MIN_FLOW_PACKETS:
+            for flow_key, flow_state in remaining.items():
+                if flow_state.total_pkts >= MIN_FLOW_PACKETS:
                     if self.max_flows > 0 and self.flow_count >= self.max_flows:
                         break
                     try:
                         t0 = time.perf_counter()
-                        features = self.flow_collector.extract_features(flow_packets)
+                        features = self.flow_collector.extract_features(flow_state)
                         label, confidence, probas = self.classifier.classify(features)
+                        
+                        # Apply confidence threshold
+                        if confidence < 0.50:
+                            label = BENIGN_LABEL
+                            
                         elapsed = (time.perf_counter() - t0) * 1000
                         self.stats['classification_time_ms'].append(elapsed)
 
@@ -841,7 +1022,7 @@ class LiveSniffer:
                                 confidence=confidence,
                                 flow_info=flow_info,
                                 features=features,
-                                packets=flow_packets,
+                                num_packets=flow_state.total_pkts,
                             )
                             logger.warning(
                                 f"[!] INTRUSION: {label} ({confidence*100:.1f}%) | "

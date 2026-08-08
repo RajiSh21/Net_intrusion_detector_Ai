@@ -62,11 +62,11 @@ def run_phase_3(output_dir):
         print("[-] XGBoost GPU acceleration not available, falling back to CPU.")
 
     model = xgb.XGBClassifier(
-        n_estimators=10,  # 30 trees per chunk, 300 total across 10 chunks
-        max_depth=5,
-        learning_rate=0.01,
-        subsample=0.5,
-        colsample_bytree=0.01,
+        n_estimators=200,
+        max_depth=8,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
         objective='multi:softprob',
         num_class=num_classes,
         eval_metric='mlogloss',

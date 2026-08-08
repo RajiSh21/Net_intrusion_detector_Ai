@@ -85,31 +85,117 @@ def get_model_info():
         "algorithm": "XGBoost",
         "trainingSamples": 73362,
         "ganAugmented": True,
-        "accuracy": "88.17%",
+        "accuracy": "98.44%",
         "classes": ["Normal", "Dos/DDos", "PortScan", "Brute Force", "Web Attack", "Botnet ARES", "Infiltration"]
     })
 
 @app.route('/api/stats')
 def get_stats():
     try:
-        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'alerts.db')
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'nids.db')
         
-        if not os.path.exists(db_path):
-            threats_found = 0
-        else:
+        threats_found = 0
+        total_analyzed = 0
+        monitored_hosts = 0
+
+        if os.path.exists(db_path):
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            # check if table exists
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ALERT'")
-            if cursor.fetchone() is None:
-                threats_found = 0
-            else:
+            if cursor.fetchone() is not None:
                 cursor.execute("SELECT COUNT(*) FROM ALERT")
                 threats_found = cursor.fetchone()[0]
+                
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='TRAFFIC_LOG'")
+            if cursor.fetchone() is not None:
+                cursor.execute("SELECT COUNT(*) FROM TRAFFIC_LOG")
+                total_analyzed = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(DISTINCT source_ip) FROM TRAFFIC_LOG")
+                monitored_hosts = cursor.fetchone()[0]
             conn.close()
-        return jsonify({"threatsFound": threats_found,
-            "totalAnalyzed": 0 # Difficult to track without a separate counter collection, handled client-side for live
+            
+        return jsonify({
+            "threatsFound": threats_found,
+            "totalAnalyzed": total_analyzed,
+            "monitoredHosts": monitored_hosts
         })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route('/api/logs')
+def get_logs():
+    try:
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'nids.db')
+        if not os.path.exists(db_path):
+            return jsonify([])
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='TRAFFIC_LOG'")
+        if cursor.fetchone() is None:
+            conn.close()
+            return jsonify([])
+            
+        cursor.execute('''
+            SELECT source_ip, destination_ip, port, protocol, classification, timestamp 
+            FROM TRAFFIC_LOG 
+            ORDER BY log_id DESC LIMIT 500
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+        
+        packets = []
+        for i, row in enumerate(rows):
+            src, dst, port, proto, cls, ts = row
+            packets.append({
+                "id": f"log-{i}",
+                "time": ts,
+                "src": src,
+                "dst": dst,
+                "proto": proto,
+                "size": 0,
+                "flags": "...",
+                "sev": "Low" if cls == "Normal" else "High",
+                "type": cls,
+                "verdict": cls
+            })
+        return jsonify(packets)
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route('/api/alerts')
+def get_alerts():
+    try:
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'nids.db')
+        if not os.path.exists(db_path):
+            return jsonify([])
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ALERT'")
+        if cursor.fetchone() is None:
+            conn.close()
+            return jsonify([])
+            
+        cursor.execute('''
+            SELECT a.alert_id, a.severity_level, a.generated_at, t.classification, t.source_ip, t.destination_ip
+            FROM ALERT a
+            JOIN TRAFFIC_LOG t ON a.log_id = t.log_id
+            ORDER BY a.alert_id DESC
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+        
+        alerts = []
+        for row in rows:
+            aid, sev, ts, cls, src, dst = row
+            alerts.append({
+                "id": f"ALT-{str(aid).zfill(4)}",
+                "time": ts,
+                "type": cls,
+                "severity": sev,
+                "srcIp": src,
+                "destIp": dst
+            })
+        return jsonify(alerts)
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -123,7 +209,7 @@ def send_code():
     if not email:
         return jsonify({"error": "Email is required"}), 400
         
-    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'alerts.db')
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'nids.db')
     try:
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         conn = sqlite3.connect(db_path)
@@ -131,14 +217,13 @@ def send_code():
         
         # Ensure tables exist
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS ADMINISTRATOR (
-                admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT,
-                password_hash TEXT,
+            CREATE TABLE IF NOT EXISTS USER (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
                 first_name TEXT,
                 last_name TEXT,
                 email TEXT,
-                contact TEXT,
                 role TEXT
             )
         ''')
@@ -155,12 +240,12 @@ def send_code():
         if action == 'register':
             if not username:
                 return jsonify({"error": "Username is required for registration"}), 400
-            cursor.execute("SELECT * FROM ADMINISTRATOR WHERE username = ?", (username,))
+            cursor.execute("SELECT * FROM USER WHERE username = ?", (username,))
             if cursor.fetchone():
                 conn.close()
                 return jsonify({"error": "Username already exists"}), 400
         elif action == 'reset':
-            cursor.execute("SELECT * FROM ADMINISTRATOR WHERE email = ?", (email,))
+            cursor.execute("SELECT * FROM USER WHERE email = ?", (email,))
             if not cursor.fetchone():
                 conn.close()
                 return jsonify({"error": "No account found with that email address"}), 404
@@ -195,13 +280,16 @@ def register():
     if not username or not password or not first_name or not email or not code:
         return jsonify({"error": "Required fields are missing, including verification code"}), 400
 
-    if bool(re.search(r'\d', username)):
-        return jsonify({"error": "Username cannot contain numbers"}), 400
+    if not re.match(r'^[a-zA-Z0-9._]+$', username):
+        return jsonify({"error": "Username can only contain letters, numbers, dots, and underscores."}), 400
+
+    if re.search(r'[._]{2,}', username):
+        return jsonify({"error": "Username cannot contain consecutive dots or underscores."}), 400
 
     if username.lower() == password.lower():
         return jsonify({"error": "Username and password cannot be identical"}), 400
 
-    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'alerts.db')
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'nids.db')
     
     try:
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -210,20 +298,19 @@ def register():
         
         # Ensure table exists
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS ADMINISTRATOR (
-                admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT,
-                password_hash TEXT,
+            CREATE TABLE IF NOT EXISTS USER (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
                 first_name TEXT,
                 last_name TEXT,
                 email TEXT,
-                contact TEXT,
                 role TEXT
             )
         ''')
         
         # Check if user exists
-        cursor.execute("SELECT * FROM ADMINISTRATOR WHERE username = ?", (username,))
+        cursor.execute("SELECT * FROM USER WHERE username = ?", (username,))
         if cursor.fetchone():
             conn.close()
             return jsonify({"error": "Username already exists"}), 400
@@ -257,9 +344,9 @@ def register():
 
         hashed_pw = generate_password_hash(password)
         cursor.execute('''
-            INSERT INTO ADMINISTRATOR (username, password_hash, first_name, last_name, email, contact, role) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (username, hashed_pw, first_name, last_name, email, contact, role))
+            INSERT INTO USER (username, password_hash, first_name, last_name, email, role) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (username, hashed_pw, first_name, last_name, email, role))
         conn.commit()
         conn.close()
         
@@ -276,7 +363,7 @@ def login():
     if not username or not password:
         return jsonify({"error": "Username and password are required"}), 400
 
-    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'alerts.db')
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'nids.db')
     
     try:
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -285,19 +372,18 @@ def login():
         
         # Ensure table exists
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS ADMINISTRATOR (
-                admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT,
-                password_hash TEXT,
+            CREATE TABLE IF NOT EXISTS USER (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
                 first_name TEXT,
                 last_name TEXT,
                 email TEXT,
-                contact TEXT,
                 role TEXT
             )
         ''')
         
-        cursor.execute("SELECT admin_id, username, password_hash, first_name, last_name, email, contact, role FROM ADMINISTRATOR WHERE username = ?", (username,))
+        cursor.execute("SELECT user_id, username, password_hash, first_name, last_name, email, role FROM USER WHERE username = ?", (username,))
         user = cursor.fetchone()
         conn.close()
         
@@ -308,13 +394,12 @@ def login():
             return jsonify({
                 "success": True, 
                 "user": {
-                    "admin_id": user[0],
+                    "user_id": user[0],
                     "username": user[1],
                     "firstName": user[3],
                     "lastName": user[4],
                     "email": user[5],
-                    "contact": user[6],
-                    "role": user[7]
+                    "role": user[6]
                 }
             })
         else:
@@ -332,12 +417,12 @@ def reset_password():
     if not email or not new_password or not code:
         return jsonify({"error": "Email, new password, and verification code are required"}), 400
 
-    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'alerts.db')
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'nids.db')
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT username FROM ADMINISTRATOR WHERE email = ?", (email,))
+        cursor.execute("SELECT username FROM USER WHERE email = ?", (email,))
         user = cursor.fetchone()
         
         if not user:
@@ -377,7 +462,7 @@ def reset_password():
             return jsonify({"error": "Please enter a valid email address."}), 400
 
         hashed_pw = generate_password_hash(new_password)
-        cursor.execute("UPDATE ADMINISTRATOR SET password_hash = ? WHERE email = ?", (hashed_pw, email))
+        cursor.execute("UPDATE USER SET password_hash = ? WHERE email = ?", (hashed_pw, email))
         conn.commit()
         conn.close()
         
