@@ -85,7 +85,7 @@ def get_model_info():
         "algorithm": "XGBoost",
         "trainingSamples": 73362,
         "ganAugmented": True,
-        "accuracy": "98.44%",
+        "accuracy": "84.32%",
         "classes": ["Normal", "Dos/DDos", "PortScan", "Brute Force", "Web Attack", "Botnet ARES", "Infiltration"]
     })
 
